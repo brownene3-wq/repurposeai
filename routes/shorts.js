@@ -1834,24 +1834,25 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
     // finished, the endpoint returned 404, and the card fell back to
     // the music-note overlay.
     if (_persistedPath) {
+      const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
+      let needPlaceholder = true;
       try {
         const hasVid = await _ffprobeHasVideo(_persistedPath).catch((e) => {
           console.warn('  [analyze-upload] ffprobe error:', e && e.message);
           return false;
         });
         if (hasVid) {
-          const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
-          let extractOk = false;
-          try { await extractFrameAt(_persistedPath, 1.0, thumbOut); extractOk = true; }
+          try { await extractFrameAt(_persistedPath, 1.0, thumbOut); }
           catch (e1) {
             console.warn('  [analyze-upload] thumb @1s failed, trying @0:', e1.message);
-            try { await extractFrameAt(_persistedPath, 0, thumbOut); extractOk = true; }
+            try { await extractFrameAt(_persistedPath, 0, thumbOut); }
             catch (e2) { console.error('  [analyze-upload] thumb @0 also failed:', e2.message); }
           }
-          if (extractOk && _fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
+          if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
             const thumbBytes = _fs.readFileSync(thumbOut);
             await shortsOps.setThumbnail(analysisId, thumbBytes);
             console.log('  [analyze-upload] thumbnail pre-persisted to DB (' + thumbBytes.length + ' bytes) for ' + analysisId);
+            needPlaceholder = false;
           } else {
             console.warn('  [analyze-upload] thumbnail extract produced no valid output for ' + analysisId);
           }
@@ -1860,6 +1861,37 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
         }
       } catch (tErr) {
         console.error('  [analyze-upload] sync thumbnail extract failed:', tErr.message);
+      }
+      // Fallback: if real extraction didn't produce a usable thumbnail,
+      // generate the styled placeholder so the card NEVER falls through
+      // to the music-note overlay. Audio-only uploads + decode failures
+      // all land here.
+      if (needPlaceholder) {
+        try {
+          await generatePlaceholderThumb(fileName || 'Uploaded video', thumbOut);
+          if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
+            const phBytes = _fs.readFileSync(thumbOut);
+            await shortsOps.setThumbnail(analysisId, phBytes);
+            console.log('  [analyze-upload] placeholder thumbnail persisted to DB (' + phBytes.length + ' bytes) for ' + analysisId);
+          }
+        } catch (phErr) {
+          console.error('  [analyze-upload] placeholder generation failed:', phErr.message);
+        }
+      }
+    } else {
+      // _persistedPath was null — persist still produces a placeholder
+      // so the card has SOMETHING to show. This is the safety net
+      // for any unexpected persist failure (out of disk, etc.).
+      try {
+        const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
+        await generatePlaceholderThumb(fileName || 'Uploaded video', thumbOut);
+        if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
+          const phBytes = _fs.readFileSync(thumbOut);
+          await shortsOps.setThumbnail(analysisId, phBytes);
+          console.log('  [analyze-upload] placeholder thumbnail persisted to DB for ' + analysisId + ' (persist failed earlier)');
+        }
+      } catch (phErr) {
+        console.error('  [analyze-upload] safety-net placeholder failed:', phErr.message);
       }
     }
 
@@ -3812,6 +3844,58 @@ async function resolveUploadedSourcePath(analysisId) {
   }
 }
 
+// Generate a styled placeholder JPEG when we can't extract a real
+// video frame. Output is 1280x720 with a vertical purple gradient
+// and the title centered, mimicking the polished look of a real
+// thumbnail so the analysis card doesn't fall through to the
+// generic music-note overlay. Used as the last-resort fallback
+// for audio-only uploads, missing-source cases, and any other
+// situation where extractFrameAt would otherwise fail.
+function generatePlaceholderThumb(title, outPath) {
+  return new Promise((resolve, reject) => {
+    // Sanitize the title for ffmpeg's drawtext filter — it parses
+    // ':' as a delimiter and uses backslash escaping. Strip control
+    // chars, escape colons + backslashes + single quotes + percents.
+    const safeTitle = (String(title || 'Uploaded video'))
+      .replace(/[\u0000-\u001f]/g, ' ')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\u2019") // smart apostrophe — avoid the drawtext escape mess entirely
+      .replace(/:/g, '\\:')
+      .replace(/%/g, '\\%')
+      .substring(0, 80);
+    // Vertical gradient via geq filter: top-to-bottom from deep
+    // indigo to near-black, matching the platform's surface palette.
+    const vf = [
+      "geq=r='30+(Y/720)*15':g='20+(Y/720)*8':b='50+(Y/720)*30'",
+      `drawtext=text='${safeTitle}':fontsize=58:fontcolor=#e9d8ff:x=(w-tw)/2:y=(h-th)/2:box=0:line_spacing=12`
+    ].join(',');
+    const ffArgs = [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'color=color=black:size=1280x720:duration=0.1',
+      '-vf', vf,
+      '-frames:v', '1',
+      '-q:v', '4',
+      '-f', 'image2',
+      outPath
+    ];
+    const proc = spawn(ffmpegPath, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', e => settle(reject, e));
+    proc.on('close', code => {
+      if (code === 0) settle(resolve);
+      else settle(reject, new Error('ffmpeg placeholder exit ' + code + ': ' + stderr.slice(-200)));
+    });
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      settle(reject, new Error('ffmpeg placeholder timed out'));
+    }, 8000);
+  });
+}
+
 // Extract a single JPEG frame from a video source at the given offset
 // (seconds). Used by the upload-thumbnail endpoints below; the output
 // is small (~10-40 KB) so we don't bother with a concurrency lock.
@@ -3910,28 +3994,64 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
       return sendBytes(bytes);
     }
 
-    // 3) Live extract from source.
+    // Helper: last-resort styled placeholder so we ALWAYS return a real
+    // image. Promotes to DB on success so subsequent requests are
+    // cache hits and the card never falls back to the music-note
+    // overlay again.
+    const servePlaceholder = async (reason) => {
+      try {
+        console.log('  upload-thumbnail: serving placeholder for ' + analysisId + ' (' + reason + ')');
+        await generatePlaceholderThumb(analysis.video_title || 'Uploaded video', outPath);
+        if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+          const phBytes = fs.readFileSync(outPath);
+          shortsOps.setThumbnail(analysisId, phBytes).catch(e =>
+            console.warn('  upload-thumbnail placeholder DB persist failed:', e.message));
+          return sendBytes(phBytes);
+        }
+      } catch (phErr) {
+        console.error('  upload-thumbnail placeholder generation failed:', phErr.message);
+      }
+      // True last resort — return a tiny 1x1 transparent JPEG so the
+      // <img> never fires onerror.
+      const fallback = Buffer.from([
+        0xff,0xd8,0xff,0xe0,0x00,0x10,0x4a,0x46,0x49,0x46,0x00,0x01,0x01,0x00,0x00,0x01,
+        0x00,0x01,0x00,0x00,0xff,0xdb,0x00,0x43,0x00,0x08,0x06,0x06,0x07,0x06,0x05,0x08,
+        0x07,0x07,0x07,0x09,0x09,0x08,0x0a,0x0c,0x14,0x0d,0x0c,0x0b,0x0b,0x0c,0x19,0x12,
+        0x13,0x0f,0x14,0x1d,0x1a,0x1f,0x1e,0x1d,0x1a,0x1c,0x1c,0x20,0x24,0x2e,0x27,0x20,
+        0x22,0x2c,0x23,0x1c,0x1c,0x28,0x37,0x29,0x2c,0x30,0x31,0x34,0x34,0x34,0x1f,0x27,
+        0x39,0x3d,0x38,0x32,0x3c,0x2e,0x33,0x34,0x32,0xff,0xc0,0x00,0x0b,0x08,0x00,0x01,
+        0x00,0x01,0x01,0x01,0x11,0x00,0xff,0xc4,0x00,0x1f,0x00,0x00,0x01,0x05,0x01,0x01,
+        0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x02,0x03,0x04,
+        0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0xff,0xc4,0x00,0xb5,0x10,0x00,0x02,0x01,0x03,
+        0x03,0x02,0x04,0x03,0x05,0x05,0x04,0x04,0x00,0x00,0x01,0x7d,0x01,0x02,0x03,0x00,
+        0x04,0x11,0x05,0x12,0x21,0x31,0x41,0x06,0x13,0x51,0x61,0x07,0x22,0x71,0x14,0x32,
+        0x81,0x91,0xa1,0x08,0x23,0x42,0xb1,0xc1,0x15,0x52,0xd1,0xf0,0x24,0x33,0x62,0x72,
+        0x82,0xff,0xda,0x00,0x08,0x01,0x01,0x00,0x00,0x3f,0x00,0xfb,0xd0,0xff,0xd9
+      ]);
+      return sendBytes(fallback);
+    };
+
+    // 3) Live extract from source — resolve, probe, frame-extract.
+    //    Any failure here falls through to the placeholder generator.
     const sourcePath = await resolveUploadedSourcePath(analysisId);
-    if (!sourcePath) {
-      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
-    }
-    // Probe for a usable video stream — audio-only podcast uploads
-    // would otherwise produce a black frame that's worse than no
-    // image. Same noVideoSource signal as the moment-thumbnail path.
+    if (!sourcePath) return servePlaceholder('source missing');
+
+    // Probe for a usable video stream. Audio-only uploads (podcasts)
+    // get the styled placeholder instead of a confusing 404.
     const mainHasVideo = await _ffprobeHasVideo(sourcePath);
-    if (!mainHasVideo) {
-      console.log('  upload-thumbnail: source has no video stream (audio-only upload) for analysis ' + analysisId);
-      return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
-    }
+    if (!mainHasVideo) return servePlaceholder('audio-only');
+
     try {
       await extractFrameAt(sourcePath, 1.0, outPath);
     } catch (e) {
       try { await extractFrameAt(sourcePath, 0, outPath); } catch (e2) {
         console.error('  upload-thumbnail extract failed:', e2.message);
-        return res.status(500).end();
+        return servePlaceholder('extract failed');
       }
     }
-    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) {
+      return servePlaceholder('extract produced empty output');
+    }
     const bytes = fs.readFileSync(outPath);
     // Persist to DB so future requests survive /tmp wipes.
     shortsOps.setThumbnail(analysisId, bytes).catch(e =>
@@ -4017,19 +4137,35 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       return sendBytes(bytes);
     }
 
+    // Local placeholder helper for this endpoint — generates a styled
+    // image from the moment's title (or analysis title) and persists
+    // it as the moment's thumbnail. Same approach as the main
+    // upload-thumbnail endpoint; the card never falls through to
+    // the music-note overlay.
+    const sendMomentPlaceholder = async (reason) => {
+      try {
+        console.log('  upload-moment-thumbnail: serving placeholder for ' + analysisId + '/m' + momentIdx + ' (' + reason + ')');
+        const phTitle = (moment && moment.title) || analysis.video_title || 'Moment ' + (momentIdx + 1);
+        await generatePlaceholderThumb(phTitle, outPath);
+        if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
+          const phBytes = fs.readFileSync(outPath);
+          shortsOps.setMomentThumbnail(analysisId, momentIdx, phBytes).catch(() => {});
+          return sendBytes(phBytes);
+        }
+      } catch (phErr) {
+        console.error('  upload-moment-thumbnail placeholder failed:', phErr.message);
+      }
+      return res.status(500).end();
+    };
+
     // 3) Live extract
     const sourcePath = await resolveUploadedSourcePath(analysisId);
-    if (!sourcePath) {
-      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
-    }
+    if (!sourcePath) return sendMomentPlaceholder('source missing');
+
     // Probe first: audio-only sources produce black frames at every
-    // seek position. Short-circuit with 404 + noVideoSource so the
-    // client paints the gradient/title placeholder instead.
+    // seek position.
     const hasVideo = await _ffprobeHasVideo(sourcePath);
-    if (!hasVideo) {
-      console.log('  upload-moment-thumbnail: source has no video stream for analysis ' + analysisId);
-      return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
-    }
+    if (!hasVideo) return sendMomentPlaceholder('audio-only');
     let startSec = 0, endSec = 0;
     try {
       const r = parseTimeRange(moment.timeRange);
@@ -4088,7 +4224,9 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       } catch (fbErr) {
         console.error('  upload-moment-thumbnail main-thumb fallback failed:', fbErr.message);
       }
-      return res.status(500).end();
+      // Final last-resort: styled placeholder so the moment card never
+      // shows the music-note overlay.
+      return sendMomentPlaceholder('all seeks failed');
     }
     const bytes = fs.readFileSync(outPath);
     shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
