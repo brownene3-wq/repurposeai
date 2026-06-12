@@ -21,6 +21,21 @@
   if (window.__v10EditorRedesignLoaded) return;
   window.__v10EditorRedesignLoaded = true;
 
+  // Task #173 — Stamp the body with v10-timeline-empty as early as
+  // possible (before any layout) so the boot-time CSS rule below
+  // dims every sidebar action button on the very first paint. The
+  // updateSidebarEmptyGate function below will toggle this off the
+  // moment a clip lands on any track.
+  try {
+    if (document.body){
+      document.body.classList.add('v10-timeline-empty');
+    } else {
+      document.addEventListener('DOMContentLoaded', function(){
+        try { document.body.classList.add('v10-timeline-empty'); } catch(_){}
+      });
+    }
+  } catch(_){}
+
   var CSS = [
     '/* v10 media corner */',
     '.v10-drop{margin:10px 12px 10px;padding:18px 12px;border:2px dashed #2a2545;border-radius:10px;background:rgba(255,255,255,.015);text-align:center;cursor:pointer;transition:all .2s}',
@@ -50,6 +65,14 @@
     '.v10-mi-badge.vid{background:rgba(124,58,237,.18);color:#a78bfa}',
     '.v10-mi-badge.aud{background:rgba(59,130,246,.18);color:#60a5fa}',
     '.v10-mi-badge.img{background:rgba(34,197,94,.18);color:#4ade80}',
+    /* Task #173 — Boot-time dim. On initial paint (body.v10-timeline-empty),
+     * dim every sidebar action button so the user can't click anything
+     * before the timeline gates have had a chance to evaluate. The JS
+     * gates take over after that, toggling .v10-empty-disabled per-button.
+     * Tab-switcher buttons (.cat-btn), the export bar, and Save-as-Draft
+     * stay clickable so the user can still browse + save. */
+    'body.v10-timeline-empty .editor-sidebar .v10-rp-btn,body.v10-timeline-empty .editor-sidebar .v10-fx-btn,body.v10-timeline-empty .editor-sidebar .tb3{opacity:.4;pointer-events:none;cursor:not-allowed}',
+    'body.v10-timeline-empty .editor-sidebar #exportButton,body.v10-timeline-empty .editor-sidebar #saveAsDraftBtn,body.v10-timeline-empty .editor-sidebar #vePublishBtn,body.v10-timeline-empty .editor-sidebar #tourHelpBtn,body.v10-timeline-empty .editor-sidebar #projectAspectBadge,body.v10-timeline-empty .editor-sidebar .cat-btn{opacity:1;pointer-events:auto;cursor:pointer}',
     /* v10 × delete button (Task #168) */
     '.v10-mi-del{position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15);background:rgba(15,10,30,.85);color:#ef4444;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;z-index:2;opacity:0;transition:opacity .15s}',
     '.media-library .ml-fitem.v10-styled:hover .v10-mi-del{opacity:1}',
@@ -2681,12 +2704,18 @@
       // Task #56 — Brand Kit now uses an inline modal too
       'Brand Kit': 1
     };
-    // Actions that require a selected clip with a server-side mediaUrl.
-    // AI Voice is the exception — user types text, no clip needed.
+    // Actions that require something on the V1 timeline before they're
+    // usable. Task #173 — Every AI tool now appears in this map so the
+    // sidebar shows a clean disabled-until-loaded state on first paint.
+    // AI Voice technically synthesises from text alone, but the user
+    // asked us to gate it consistently with the rest of the sidebar so
+    // the editor doesn't expose features before the upload panel has
+    // received anything. Brand Kit is also gated for the same reason.
     var REQUIRES_CLIP = {
       'Enhance Audio': 1, 'Captions': 1, 'AI Hook': 1, 'B-Roll': 1,
       'Smart Cut': 1, 'Scene Detect': 1,
-      'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1
+      'Translate': 1, 'BG Remove': 1, 'Style Transfer': 1,
+      'AI Voice': 1, 'Brand Kit': 1
     };
 
     // Task #33 — Gate clip-dependent AI buttons. Disables + dims them
@@ -2708,7 +2737,11 @@
         b.disabled = !ok;
         b.style.opacity = ok ? '' : '0.45';
         b.style.cursor  = ok ? '' : 'not-allowed';
-        b.title = ok ? '' : 'Select a V1 clip first';
+        // Task #173 — Friendlier tooltip. Most tools need a V1 clip
+        // selected; AI Hook can run from any track, but the rest of
+        // the sidebar (Brand Kit, AI Voice, etc.) consistently asks
+        // the user to load something via the upload panel first.
+        b.title = ok ? '' : 'Add a video to the timeline via the upload panel first';
       });
     }
     // Kick off an initial pass + watch the tracks for changes
@@ -2910,6 +2943,14 @@
       '.mt-track-video .mt-clip, .mt-track-audio .mt-clip, ' +
       '.mt-track-text .mt-clip, .mt-track-fx .mt-clip'
     );
+    // Task #173 — Body class drives the CSS-level pre-dim for the
+    // boot window before this JS gate has run, and continues to dim
+    // anything we don't explicitly toggle below. The per-button JS
+    // gate still runs so dynamically-rendered AI buttons stay in
+    // sync.
+    try {
+      document.body.classList.toggle('v10-timeline-empty', !hasAnyClip);
+    } catch(_){}
     var SKIP_IDS = { 'exportButton': 1, 'vePublishBtn': 1, 'saveAsDraftBtn': 1, 'tourHelpBtn': 1, 'projectAspectBadge': 1 };
     var btns = sidebar.querySelectorAll('.v10-rp-btn, .v10-fx-btn, .tb3');
     btns.forEach(function(b){
