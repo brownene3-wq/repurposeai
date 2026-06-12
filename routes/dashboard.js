@@ -613,7 +613,10 @@ router.get('/', requireAuth, async (req, res) => {
 
     async function processVideo() {
       const url = document.getElementById('youtubeUrl').value.trim();
-      if (!url) { alert('Please paste a YouTube URL'); return; }
+      if (!url) {
+        (window.themedAlert ? window.themedAlert('Paste a YouTube URL above to get started — we will do the rest.', { title: 'Add a YouTube link' }) : alert('Please paste a YouTube URL'));
+        return;
+      }
 
       const btn = document.getElementById('processBtn');
       btn.disabled = true; btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Analyzing…';
