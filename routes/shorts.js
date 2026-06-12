@@ -9265,7 +9265,15 @@ ${paginationHtml}
               'style="position:absolute; top:10px; right:10px; background:rgba(239,68,68,0.9); border:2px solid rgba(255,255,255,0.3); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; z-index:10; transition:all 0.2s; font-weight:bold;" ' +
               'onmouseover="this.style.background=\\'#ef4444\\'; this.style.transform=\\'scale(1.15)\\'" ' +
               'onmouseout="this.style.background=\\'rgba(239,68,68,0.9)\\'; this.style.transform=\\'scale(1)\\'">&times;</button>' +
-            (thumbSrc ? '<img src="' + thumbSrc + '" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;background:#000;" onerror="this.style.display=\\'none\\'">' : '') +
+            (thumbSrc ?
+              '<div style="position:relative;width:100%;aspect-ratio:16/9;border-radius:8px;margin-bottom:12px;overflow:hidden;background:linear-gradient(135deg,#2a1f4a 0%,#1a1430 60%,#0a0612 100%);">' +
+                '<img src="' + thumbSrc + '" alt="Video thumbnail" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.onerror=null;this.style.display=\\'none\\';var ovl=this.parentElement.querySelector(\\'.card-thumb-fallback\\');if(ovl)ovl.style.display=\\'flex\\';">' +
+                '<div class="card-thumb-fallback" style="display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;padding:16px;text-align:center;color:#e9d8ff;">' +
+                  '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-bottom:8px;opacity:0.85;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>' +
+                  '<div style="font-size:13px;font-weight:700;line-height:1.3;max-width:90%;">' + _escHtmlAP((data.video_title || 'Audio upload').substring(0, 60)) + '</div>' +
+                '</div>' +
+              '</div>'
+            : '') +
             '<div class="card-header">' +
               '<div class="card-title">' + _escHtmlAP(data.video_title || 'YouTube Video') + '</div>' +
               '<div class="card-meta">' + _escHtmlAP(dateStr) + '</div>' +
