@@ -1745,9 +1745,23 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
     try {
       _persistedExt = (path.extname(filePath || '') || '.mp4').toLowerCase();
       _persistedPath = path.join(CLIPS_DIR, 'upload-' + analysisId + _persistedExt);
-      _fs.renameSync(filePath, _persistedPath);
+      // renameSync fails EXDEV when source + dest are on different
+      // filesystems (Railway uploads/repurpose lives on the app volume
+      // and CLIPS_DIR is on /tmp — different mounts). Try rename
+      // first as a cheap atomic move on same-fs, fall back to
+      // copy+unlink when crossing fs boundaries.
+      try {
+        _fs.renameSync(filePath, _persistedPath);
+      } catch (renameErr) {
+        if (renameErr.code === 'EXDEV') {
+          _fs.copyFileSync(filePath, _persistedPath);
+          try { _fs.unlinkSync(filePath); } catch (_) {}
+        } else {
+          throw renameErr;
+        }
+      }
       // Update filePath so the finally-block doesn't try to delete the now
-      // -moved file (renameSync invalidated the original path).
+      // -moved file (rename/copy+unlink invalidated the original path).
       filePath = null;
       console.log('  [analyze-upload] persisted source video at ' + _persistedPath);
     } catch (mvErr) {
@@ -3765,9 +3779,12 @@ async function resolveUploadedSourcePath(analysisId) {
     // at once, both will try to write the same file; the second one
     // will overwrite the first but that's fine (idempotent).
     console.log('  [resolveUploadedSourcePath] /tmp miss for ' + analysisId + ' — pulling from R2: ' + r2Key);
-    const bytes = await r2.getObject(r2Key);
+    const got = await r2.getObject(r2Key);
+    // r2.getObject returns { ok, body, ... }, OR a raw Buffer in
+    // legacy code paths — accept both shapes defensively.
+    const bytes = Buffer.isBuffer(got) ? got : (got && got.ok ? got.body : null);
     if (!bytes || !bytes.length) {
-      console.warn('  [resolveUploadedSourcePath] R2 returned empty body for ' + r2Key);
+      console.warn('  [resolveUploadedSourcePath] R2 returned empty body for ' + r2Key + ': ' + JSON.stringify(got && { ok: got.ok, status: got.status, error: got.error }));
       return null;
     }
     fs.writeFileSync(restorePath, bytes);
@@ -5925,8 +5942,18 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
             if (put.ok) {
               r2Key = key;
               console.log('  Uploaded to R2: ' + key + ' (' + (bytes.length / 1024 / 1024).toFixed(1) + 'MB)');
-              // Safe to delete local copy now — R2 has it.
-              try { fs.unlinkSync(outputPath); } catch (e) {}
+              // DON'T unlink the local copy immediately — that races
+              // with any follow-up operation (AI Narration ffmpeg
+              // mux, B-Roll, Download Clip) that uses the same path.
+              // /narrate's existence check would pass, then the
+              // unlink fires before ffmpeg opens the file, and the
+              // mux step dies with 'No such file or directory'.
+              // Defer the unlink so it's still bounded but never
+              // races with the immediate next operation.
+              setTimeout(() => {
+                try { fs.unlinkSync(outputPath); } catch (e) {}
+                console.log('  Deferred local cleanup: ' + outputPath);
+              }, 15 * 60 * 1000);
             } else {
               console.error('  R2 upload failed: ' + (put.error || put.status));
             }
@@ -6188,10 +6215,34 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
       return res.status(404).json({ error: 'Moment not found' });
     }
 
-    // Verify clip file exists
+    // Verify clip file exists — fall back to R2 restore on miss.
+    // This protects against the unlink-after-R2 race in /shorts/clip
+    // (now deferred but defense in depth) and Railway /tmp wipes.
     const clipPath = path.join(CLIPS_DIR, clipFilename);
     if (!fs.existsSync(clipPath)) {
-      return res.status(404).json({ error: 'Clip file not found', needsRegeneration: true });
+      let restored = false;
+      try {
+        const r2 = require('../utils/r2');
+        if (r2.isConfigured()) {
+          const r2Key = 'clips/' + clipFilename;
+          const got = await r2.getObject(r2Key);
+          // r2.getObject returns { ok, body } on success. Accept a
+          // raw Buffer too for legacy callers.
+          const body = Buffer.isBuffer(got) ? got : (got && got.ok ? got.body : null);
+          if (body && body.length > 10000) {
+            fs.writeFileSync(clipPath, body);
+            restored = true;
+            console.log('  [narrate] restored clip from R2: ' + r2Key + ' (' + body.length + ' bytes)');
+          } else if (got && got.error) {
+            console.warn('  [narrate] R2 fetch reported error: ' + got.error);
+          }
+        }
+      } catch (e) {
+        console.warn('  [narrate] R2 restore failed:', e.message);
+      }
+      if (!restored) {
+        return res.status(404).json({ error: 'Clip file not found', needsRegeneration: true });
+      }
     }
 
     // Generate output filename
