@@ -573,8 +573,8 @@ router.get('/', requireAuth, async (req, res) => {
       // SSE pipeline, so the user experience matches an upload.
       const isDrive = source === 'googledrive';
       const promptMsg = isDrive
-        ? 'Paste a publicly shareable Google Drive link.\n\nIn Drive, right-click the file → Share → Anyone with the link → Copy link.'
-        : 'Paste a publicly shareable Dropbox link.\n\nIn Dropbox, click Share on the file → Copy link.';
+        ? 'Paste a publicly shareable Google Drive link.\\n\\nIn Drive, right-click the file → Share → Anyone with the link → Copy link.'
+        : 'Paste a publicly shareable Dropbox link.\\n\\nIn Dropbox, click Share on the file → Copy link.';
       const placeholder = isDrive
         ? 'https://drive.google.com/file/d/.../view?usp=sharing'
         : 'https://www.dropbox.com/s/.../filename.mp4?dl=0';
