@@ -1228,6 +1228,8 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
   const linkUrl = sourceItem.url || sourceItem.link;
   if (linkUrl) pinPayload.link = linkUrl;
 
+  const tokenPreview = accessToken ? (accessToken.slice(0, 8) + '...len=' + accessToken.length) : 'EMPTY/UNDEFINED';
+  console.log('[Pinterest] POST /v5/pins board=' + boardId + ' token=' + tokenPreview + ' payloadKeys=' + Object.keys(pinPayload).join(','));
   const response = await httpsPostJson(
     'https://api.pinterest.com/v5/pins',
     pinPayload,
@@ -1245,6 +1247,8 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
   if (!body.id) {
     const status = response.status || 0;
     const reason = body.message || body.error_description || body.error || (typeof body === 'string' ? body : JSON.stringify(body).slice(0, 300));
+    // Log the full response so we can see what Pinterest actually said.
+    console.error('[Pinterest] /v5/pins ' + status + ' rejected. response.body=', JSON.stringify(body).slice(0, 500), 'tokenPreview=' + tokenPreview);
     if (status === 401 || status === 403) {
       // Surface refresh diagnostics so the user knows why this is
       // happening — refresh disabled? refresh failed? token rotted?
@@ -1256,7 +1260,8 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
       } else {
         suffix = ' Reconnect Pinterest on /distribute/connections so we can get a fresh access token.';
       }
-      throw new Error('Pinterest authentication failed (status ' + status + ').' + suffix);
+      // INCLUDE the real Pinterest reason so we know what they said.
+      throw new Error('Pinterest authentication failed (status ' + status + '): ' + (reason || 'no detail from Pinterest') + '.' + suffix);
     }
     throw new Error('Pinterest pin creation failed (status ' + status + '): ' + reason);
   }

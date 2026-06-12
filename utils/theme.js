@@ -490,7 +490,189 @@ function getThemeScript() {
     } catch(_){}
   
     // Load v9 buttons fix
-    var _s=document.createElement('script');_s.src='/public/js/v9-buttons-fix.js';document.head.appendChild(_s);`;
+    var _s=document.createElement('script');_s.src='/public/js/v9-buttons-fix.js';document.head.appendChild(_s);
+
+
+      /* =====================================================
+       * Themed alert / confirm / prompt
+       *
+       * One shared modal used for every blocking-style pop-up
+       * across the app. window.alert is overridden globally so
+       * every legacy alert('Please paste a URL') inherits the
+       * dark/purple Splicora skin automatically.
+       *
+       * window.confirm / window.prompt are intentionally NOT
+       * overridden — native versions block the JS event loop
+       * synchronously, a div modal can't. Use the promise-based
+       * themedConfirm() / themedPrompt() in new code.
+       * ===================================================== */
+      (function(){
+        if (window.__themedAlertReady) return;
+        window.__themedAlertReady = true;
+
+        if (!document.getElementById('__themed-alert-style')) {
+          var st = document.createElement('style');
+          st.id = '__themed-alert-style';
+          st.textContent =
+            '.themed-alert-backdrop{position:fixed;inset:0;background:rgba(8,5,20,0.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:200000;display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;transition:opacity .15s ease;}' +
+            '.themed-alert-backdrop.open{opacity:1;}' +
+            '.themed-alert-card{background:#16112a;color:#e2e0f0;border:1px solid rgba(108,58,237,0.40);border-radius:16px;width:100%;max-width:460px;padding:24px 24px 22px;box-shadow:0 24px 60px -16px rgba(0,0,0,0.55),0 0 0 1px rgba(108,58,237,0.20);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;transform:translateY(8px) scale(.985);transition:transform .18s ease;}' +
+            '.themed-alert-backdrop.open .themed-alert-card{transform:translateY(0) scale(1);}' +
+            'body.light .themed-alert-card,html.light .themed-alert-card{background:#ffffff;color:#1f1b35;border-color:rgba(108,58,237,0.30);box-shadow:0 24px 60px -16px rgba(108,58,237,0.30),0 0 0 1px rgba(108,58,237,0.12);}' +
+            '.themed-alert-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;}' +
+            '.themed-alert-icon{flex-shrink:0;width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1rem;box-shadow:0 6px 16px -8px rgba(108,58,237,0.55);}' +
+            '.themed-alert-icon.danger{background:linear-gradient(135deg,#EF4444,#F59E0B);}' +
+            '.themed-alert-icon.success{background:linear-gradient(135deg,#10B981,#06B6D4);}' +
+            '.themed-alert-icon.warning{background:linear-gradient(135deg,#F59E0B,#EC4899);}' +
+            '.themed-alert-title{font-size:1.02rem;font-weight:800;line-height:1.3;margin-top:4px;}' +
+            '.themed-alert-body{font-size:0.92rem;line-height:1.5;color:inherit;opacity:.85;margin-bottom:18px;white-space:pre-wrap;word-break:break-word;}' +
+            '.themed-alert-input{width:100%;background:#0f0a1f;border:1px solid rgba(255,255,255,0.10);color:#e2e0f0;border-radius:10px;padding:10px 12px;font-size:0.92rem;font-family:inherit;outline:none;margin-bottom:18px;}' +
+            'body.light .themed-alert-input,html.light .themed-alert-input{background:#f5f3fb;border-color:rgba(108,58,237,0.18);color:#1f1b35;}' +
+            '.themed-alert-input:focus{border-color:rgba(108,58,237,0.65);box-shadow:0 0 0 3px rgba(108,58,237,0.18);}' +
+            '.themed-alert-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;}' +
+            '.themed-alert-btn{font:inherit;font-size:0.88rem;font-weight:700;padding:9px 18px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:transform .12s ease,box-shadow .12s ease,filter .12s ease;}' +
+            '.themed-alert-btn.primary{background:linear-gradient(135deg,#6C3AED,#EC4899);color:#fff;box-shadow:0 6px 18px -6px rgba(108,58,237,0.55);}' +
+            '.themed-alert-btn.primary:hover{filter:brightness(1.08);}' +
+            '.themed-alert-btn.primary.danger{background:linear-gradient(135deg,#EF4444,#B91C1C);box-shadow:0 6px 18px -6px rgba(239,68,68,0.55);}' +
+            '.themed-alert-btn.ghost{background:transparent;border-color:rgba(255,255,255,0.16);color:#e2e0f0;}' +
+            'body.light .themed-alert-btn.ghost,html.light .themed-alert-btn.ghost{border-color:rgba(0,0,0,0.14);color:#1f1b35;}' +
+            '.themed-alert-btn.ghost:hover{background:rgba(108,58,237,0.10);}' +
+            '.themed-alert-btn:focus-visible{outline:2px solid #a78bfa;outline-offset:2px;}';
+          document.head.appendChild(st);
+        }
+
+        var DEFAULT_TITLES = { alert: 'Heads up', confirm: 'Are you sure?', prompt: '' };
+
+        function pickIcon(opts, kind){
+          if (opts && opts.icon) return opts.icon;
+          if (opts && opts.danger) return '!';
+          if (kind === 'confirm') return '?';
+          if (kind === 'prompt') return '✎';
+          return 'ℹ';
+        }
+        function pickIconClass(opts){
+          if (opts && opts.danger) return 'danger';
+          if (opts && opts.success) return 'success';
+          if (opts && opts.warning) return 'warning';
+          return '';
+        }
+
+        function open(opts, kind){
+          opts = opts || {};
+          var title = opts.title || DEFAULT_TITLES[kind] || '';
+          var message = opts.message == null ? '' : String(opts.message);
+          var okText = opts.okText || (kind === 'alert' ? 'OK' : (opts.danger ? 'Delete' : 'Confirm'));
+          var cancelText = opts.cancelText || 'Cancel';
+          var promptDefault = opts.defaultValue != null ? String(opts.defaultValue) : '';
+
+          var overlay = document.createElement('div');
+          overlay.className = 'themed-alert-backdrop';
+
+          var card = document.createElement('div');
+          card.className = 'themed-alert-card';
+          card.setAttribute('role', kind === 'alert' ? 'alertdialog' : 'dialog');
+          card.setAttribute('aria-modal', 'true');
+
+          var head = document.createElement('div');
+          head.className = 'themed-alert-head';
+          var iconEl = document.createElement('div');
+          iconEl.className = 'themed-alert-icon ' + pickIconClass(opts);
+          iconEl.textContent = pickIcon(opts, kind);
+          var titleEl = document.createElement('div');
+          titleEl.className = 'themed-alert-title';
+          titleEl.textContent = title;
+          head.appendChild(iconEl); head.appendChild(titleEl);
+
+          var body = document.createElement('div');
+          body.className = 'themed-alert-body';
+          body.textContent = message;
+
+          var inputEl = null;
+          if (kind === 'prompt') {
+            inputEl = document.createElement('input');
+            inputEl.type = opts.inputType || 'text';
+            inputEl.className = 'themed-alert-input';
+            inputEl.value = promptDefault;
+            if (opts.placeholder) inputEl.placeholder = opts.placeholder;
+          }
+
+          var actions = document.createElement('div');
+          actions.className = 'themed-alert-actions';
+
+          card.appendChild(head);
+          if (message) card.appendChild(body);
+          if (inputEl) card.appendChild(inputEl);
+          card.appendChild(actions);
+          overlay.appendChild(card);
+          document.body.appendChild(overlay);
+          requestAnimationFrame(function(){ overlay.classList.add('open'); });
+
+          return new Promise(function(resolve){
+            function cleanup(value){
+              overlay.classList.remove('open');
+              setTimeout(function(){ if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 160);
+              document.removeEventListener('keydown', onKey);
+              resolve(value);
+            }
+            function onKey(e){
+              if (e.key === 'Escape' && kind !== 'alert') {
+                cleanup(kind === 'prompt' ? null : false);
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                cleanup(kind === 'alert' ? undefined : (kind === 'prompt' ? (inputEl ? inputEl.value : '') : true));
+              }
+            }
+            document.addEventListener('keydown', onKey);
+            overlay.addEventListener('click', function(e){
+              if (e.target === overlay) cleanup(kind === 'alert' ? undefined : (kind === 'prompt' ? null : false));
+            });
+
+            if (kind !== 'alert') {
+              var cancel = document.createElement('button');
+              cancel.type = 'button';
+              cancel.className = 'themed-alert-btn ghost';
+              cancel.textContent = cancelText;
+              cancel.addEventListener('click', function(){ cleanup(kind === 'prompt' ? null : false); });
+              actions.appendChild(cancel);
+            }
+            var ok = document.createElement('button');
+            ok.type = 'button';
+            ok.className = 'themed-alert-btn primary' + (opts.danger ? ' danger' : '');
+            ok.textContent = okText;
+            ok.addEventListener('click', function(){
+              cleanup(kind === 'alert' ? undefined : (kind === 'prompt' ? (inputEl ? inputEl.value : '') : true));
+            });
+            actions.appendChild(ok);
+
+            setTimeout(function(){
+              if (inputEl) { try { inputEl.focus(); inputEl.select(); } catch(_) {} }
+              else { try { ok.focus(); } catch(_) {} }
+            }, 30);
+          });
+        }
+
+        window.themedAlert = function(message, opts){
+          opts = Object.assign({ message: message }, opts || {});
+          return open(opts, 'alert');
+        };
+        window.themedConfirm = function(message, opts){
+          opts = Object.assign({ message: message }, opts || {});
+          return open(opts, 'confirm');
+        };
+        window.themedPrompt = function(message, opts){
+          opts = Object.assign({ message: message }, opts || {});
+          return open(opts, 'prompt');
+        };
+
+        try {
+          window.__nativeAlert = window.alert;
+          window.alert = function(msg){
+            open({ message: msg }, 'alert');
+            return undefined;
+          };
+        } catch (e) {}
+      })();
+`;
 }
 
 function getBrandKitModal() {
@@ -664,6 +846,7 @@ function getBrandKitModal() {
           }
         } catch (e) {}
       })();
+
     </script>
   `;
 }

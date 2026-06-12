@@ -1124,10 +1124,30 @@ async function renderEditor(req, res) {
           <div class="video-container">
             <div class="upload-zone" id="uploadZone">
               <h3>📹 Upload Your Video</h3>
-              <p>Drop your video here or click to browse</p>
-              <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:12px">
-                <button type="button" class="upload-button" id="selectVideoBtn">Select Video</button>
-                <button type="button" class="upload-button" id="dropboxImportBtn" style="background:linear-gradient(135deg,#0061FF,#0041B3)"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
+              <p>Paste a link or import from your cloud storage</p>
+              <!-- Task #170 — URL input at the TOP, matching the
+                   Dashboard upload panel layout. Accepts YouTube,
+                   Zoom, Twitch, Rumble, Google Drive, and Dropbox
+                   shareable links — the Import button auto-detects
+                   which endpoint to POST to. -->
+              <div style="display:flex;gap:8px;margin-top:4px;width:100%;max-width:560px">
+                <div style="position:relative;flex:1">
+                  <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle"></span>
+                  <input type="text" id="youtubeUrlInput" placeholder="Paste a YouTube, Zoom, Twitch, Rumble, Google Drive, or Dropbox link" style="width:100%;padding:12px 14px 12px 36px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.9rem;outline:none;box-sizing:border-box">
+                </div>
+                <button type="button" id="youtubeImportBtn" style="padding:10px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#6C3AED,#EC4899);color:white;font-weight:600;cursor:pointer;white-space:nowrap;font-size:.9rem">▶ Import</button>
+              </div>
+              <!-- "Import From" divider + buttons — sits directly
+                   below the URL input, matching the Dashboard panel. -->
+              <div style="display:flex;align-items:center;gap:8px;margin-top:14px;width:100%;max-width:560px">
+                <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+                <span style="color:var(--text-muted);font-size:.75rem;letter-spacing:.04em;text-transform:uppercase;font-weight:600">Import From</span>
+                <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:10px">
+                <button type="button" class="upload-button" id="selectVideoBtn" style="padding:8px 16px;font-size:.8rem">📁 Select Video</button>
+                <button type="button" class="upload-button" id="googleDriveImportBtn" style="background:linear-gradient(135deg,#4285F4,#34A853);padding:8px 16px;font-size:.8rem"><img src="/images/section-icons/A-75.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Google Drive</button>
+                <button type="button" class="upload-button" id="dropboxImportBtn" style="background:linear-gradient(135deg,#0061FF,#0041B3);padding:8px 16px;font-size:.8rem"><img src="/images/section-icons/A-76.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Dropbox</button>
               </div>
               <!-- Task #142 — Visually-hidden file input that Safari
                    can still .click() programmatically. display:none
@@ -1135,22 +1155,7 @@ async function renderEditor(req, res) {
                    off-screen sizing keeps the input clickable while
                    invisible to the user. -->
               <input type="file" id="fileInput" style="display:none">
-              <div style="display:flex;align-items:center;gap:8px;margin-top:12px;width:100%;max-width:560px">
-                <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
-                <span style="color:var(--text-muted);font-size:.8rem">or drop a link</span>
-                <div style="flex:1;height:1px;background:var(--border-subtle)"></div>
-              </div>
-              <div style="display:flex;gap:8px;margin-top:8px;width:100%;max-width:560px">
-                <div style="position:relative;flex:1">
-                  <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:1rem"><img src="/images/section-icons/A-73.png" alt="" style="height:16px;width:16px;vertical-align:middle"></span>
-                  <input type="text" id="youtubeUrlInput" placeholder="Drop a YouTube, Zoom, Twitch, or Rumble link" style="width:100%;padding:12px 14px 12px 36px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-primary);font-size:.9rem;outline:none;box-sizing:border-box">
-                </div>
-                <button type="button" id="youtubeImportBtn" style="padding:10px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#6C3AED,#EC4899);color:white;font-weight:600;cursor:pointer;white-space:nowrap;font-size:.9rem">▶ Import</button>
-              </div>
-              <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;justify-content:center">
-                <button type="button" class="upload-button" id="googleDriveImportBtn" style="background:linear-gradient(135deg,#4285F4,#34A853);padding:8px 16px;font-size:.8rem"><img src="/images/section-icons/A-75.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Google Drive</button>
-              </div>
-              <p style="color:var(--text-muted);font-size:.75rem;margin-top:8px">You can upload videos up to 120 minutes long. Supports YouTube, Zoom, Twitch, Rumble links.</p>
+              <p style="color:var(--text-muted);font-size:.75rem;margin-top:14px">You can upload videos up to 120 minutes long. Supports YouTube, Zoom, Twitch, Rumble, Google Drive, and Dropbox links.</p>
             </div>
 
             <div class="video-preview-area" id="videoPreviewArea">
@@ -4595,57 +4600,87 @@ function showToast(message, type = 'success') {
     // ===== YOUTUBE IMPORT =====
     const youtubeImportBtn = document.getElementById('youtubeImportBtn');
     const youtubeUrlInput = document.getElementById('youtubeUrlInput');
+
+    // Task #170 — Shared post-import lifecycle so YouTube / GDrive /
+    // Dropbox / etc. all populate the editor the same way. Mirrors the
+    // local-upload path exactly (preview + Media library + V1 clip).
+    function applyImportedClip(data, originalName){
+      const displayName = originalName || data.title || data.filename || 'Imported';
+      currentVideoFile = data;
+      videoDuration = data.duration || 0;
+      videoPlayer.src = data.serveUrl;
+      if (videoDuration > 0) initTimeline();
+      videoPlayer?.addEventListener('loadedmetadata', function() {
+        if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
+          videoDuration = videoPlayer?.duration;
+          initTimeline();
+        }
+      });
+      uploadZone.classList.add('has-video');
+      videoPreviewArea.classList.add('has-video');
+      const exp = document.getElementById('exportButton'); if (exp) exp.disabled = false;
+      try {
+        if (typeof window.addUploadedMediaItem === 'function') {
+          window.addUploadedMediaItem({
+            name:     displayName,
+            filename: data.filename,
+            serveUrl: data.serveUrl,
+            duration: videoDuration,
+            uploadId: data.uploadId          // wires the × delete button
+          });
+        }
+      } catch (_){}
+      try {
+        if (typeof window.addClipToTimeline === 'function') {
+          window.addClipToTimeline(displayName, 'vid', videoDuration, data.serveUrl);
+        }
+      } catch (_){}
+    }
+
+    // URL-type detector: returns 'gdrive' | 'dropbox' | 'video' (youtube/
+    // zoom/twitch/rumble) | null. Used by the Import button to route
+    // automatically and by the GDrive/Dropbox buttons to validate the
+    // URL before posting.
+    function detectImportType(url){
+      if (!url) return null;
+      if (/drive\.google\.com/i.test(url)) return 'gdrive';
+      if (/dropbox\.com/i.test(url))       return 'dropbox';
+      if (/youtube\.com|youtu\.be|zoom\.us|twitch\.tv|rumble\.com/i.test(url)) return 'video';
+      return null;
+    }
+
+    // Single import worker shared by every entry point on this panel.
+    async function importFromUrl(url, kindHint){
+      const kind = kindHint || detectImportType(url);
+      if (!kind) throw new Error('That URL doesn\\'t look like a supported source. Paste a YouTube, Zoom, Twitch, Rumble, Google Drive, or Dropbox link.');
+      const endpoint = kind === 'gdrive'  ? '/video-editor/google-drive-import'
+                     : kind === 'dropbox' ? '/video-editor/dropbox-import'
+                     :                      '/video-editor/youtube-import';
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Import failed');
+      return data;
+    }
+
     if (youtubeImportBtn) {
       youtubeImportBtn.addEventListener('click', async function() {
         const url = youtubeUrlInput.value.trim();
-        if (!url) { showToast('Please paste a YouTube URL', 'error'); return; }
-        if (!url.match(/youtube\.com|youtu\.be|zoom\.us|twitch\.tv|rumble\.com/i)) { showToast('Please enter a valid video URL', 'error'); return; }
+        if (!url) { showToast('Please paste a link to import', 'error'); return; }
+        const kind = detectImportType(url);
+        if (!kind){ showToast('That URL isn\\'t a supported source.', 'error'); return; }
         youtubeImportBtn.disabled = true;
         youtubeImportBtn.textContent = '⏳ Importing...';
         try {
-          const resp = await fetch('/video-editor/youtube-import', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
-          });
-          const data = await resp.json();
-          if (!resp.ok) throw new Error(data.error || 'Import failed');
-          showToast('YouTube video imported!');
-          currentVideoFile = data;
-          videoDuration = data.duration || 0;
-          videoPlayer.src = data.serveUrl;
-          if (videoDuration > 0) initTimeline();
-          videoPlayer?.addEventListener('loadedmetadata', function() {
-            if (videoPlayer?.duration && videoPlayer?.duration !== Infinity) {
-              videoDuration = videoPlayer?.duration;
-              initTimeline();
-            }
-          });
-          uploadZone.classList.add('has-video');
-          videoPreviewArea.classList.add('has-video');
-          document.getElementById('exportButton').disabled = false;
-          // Task #58 — URL imports now follow the same lifecycle as local
-          // uploads: drop the imported clip into the Media library AND
-          // append it to V1 (matches the file-upload flow at line ~1655).
-          try {
-            if (typeof window.addUploadedMediaItem === 'function') {
-              window.addUploadedMediaItem({
-                name: data.title || data.filename || 'YouTube import',
-                filename: data.filename,
-                serveUrl: data.serveUrl,
-                duration: videoDuration
-              });
-            }
-          } catch (_){}
-          try {
-            if (typeof window.addClipToTimeline === 'function') {
-              window.addClipToTimeline(
-                data.title || data.filename || 'YouTube import',
-                'vid', videoDuration, data.serveUrl
-              );
-            }
-          } catch (_){}
-        } catch (err) {
+          const data = await importFromUrl(url, kind);
+          showToast(kind === 'gdrive'  ? 'Google Drive video imported!'
+                  : kind === 'dropbox' ? 'Dropbox video imported!'
+                  :                      'Video imported!');
+          applyImportedClip(data, null);
+        } catch (err){
           showToast(err.message, 'error');
         } finally {
           youtubeImportBtn.disabled = false;
@@ -4654,10 +4689,45 @@ function showToast(message, type = 'success') {
       });
     }
 
-    // ===== DROPBOX IMPORT =====
+    // ===== DROPBOX IMPORT (Task #170) =====
+    // Two paths:
+    //   1. URL field has a Dropbox shareable link → POST it to
+    //      /dropbox-import (which normalizes dl=0 → dl=1).
+    //   2. URL field is empty → fall back to the legacy Dropbox.choose()
+    //      OAuth chooser if the SDK loaded successfully. If the SDK
+    //      isn't available (no DROPBOX_APP_KEY env var), surface a
+    //      clear "paste a shareable link" hint instead of failing
+    //      silently like before.
     const dropboxBtn = document.getElementById('dropboxImportBtn');
     if (dropboxBtn) {
-      dropboxBtn.addEventListener('click', function() {
+      const dropboxBtnDefault = dropboxBtn.innerHTML;
+      dropboxBtn.addEventListener('click', async function() {
+        const url = youtubeUrlInput.value.trim();
+        // Path 1: user pasted a Dropbox link → shareable-link flow.
+        if (url && /dropbox\.com/i.test(url)){
+          dropboxBtn.disabled = true;
+          dropboxBtn.textContent = '⏳ Importing...';
+          try {
+            const data = await importFromUrl(url, 'dropbox');
+            showToast('Dropbox video imported!');
+            applyImportedClip(data, null);
+          } catch (err){
+            showToast(err.message, 'error');
+          } finally {
+            dropboxBtn.disabled = false;
+            dropboxBtn.innerHTML = dropboxBtnDefault;
+          }
+          return;
+        }
+        // URL is filled but not a Dropbox URL — point the user back at
+        // the input so they realize this button is link-driven.
+        if (url){
+          showToast('That URL isn\\'t a Dropbox link. Paste a Dropbox share URL or clear the field to use the chooser.', 'error');
+          try { youtubeUrlInput.focus(); } catch(_){}
+          return;
+        }
+        // Path 2: empty URL — try the legacy chooser. If unavailable,
+        // explain how to use the shareable-link flow.
         if (typeof Dropbox !== 'undefined' && Dropbox.choose) {
           Dropbox.choose({
             success: async function(files) {
@@ -4717,7 +4787,45 @@ function showToast(message, type = 'success') {
             extensions: ['video']
           });
         } else {
-          showToast('Dropbox SDK loading... try again in a moment', 'error');
+          // SDK never loaded (no DROPBOX_APP_KEY env var, or extension
+          // is blocking dropins.js). Point the user at the shareable-
+          // link path so they have a working alternative.
+          showToast('Paste a Dropbox share link in the URL field above and click Dropbox.', 'error');
+          try { youtubeUrlInput.focus(); } catch(_){}
+        }
+      });
+    }
+
+    // ===== GOOGLE DRIVE IMPORT (Task #170) =====
+    // Always shareable-link based — no OAuth chooser involved. The
+    // user pastes a Drive share URL into the URL input, then clicks
+    // this button to send it to /google-drive-import.
+    const gdriveBtn = document.getElementById('googleDriveImportBtn');
+    if (gdriveBtn) {
+      const gdriveBtnDefault = gdriveBtn.innerHTML;
+      gdriveBtn.addEventListener('click', async function() {
+        const url = youtubeUrlInput.value.trim();
+        if (!url){
+          showToast('Paste a Google Drive share link in the URL field above first.', 'error');
+          try { youtubeUrlInput.focus(); } catch(_){}
+          return;
+        }
+        if (!/drive\.google\.com/i.test(url)){
+          showToast('That URL isn\\'t a Google Drive link. Paste a Drive share URL.', 'error');
+          try { youtubeUrlInput.focus(); } catch(_){}
+          return;
+        }
+        gdriveBtn.disabled = true;
+        gdriveBtn.textContent = '⏳ Importing...';
+        try {
+          const data = await importFromUrl(url, 'gdrive');
+          showToast('Google Drive video imported!');
+          applyImportedClip(data, null);
+        } catch (err){
+          showToast(err.message, 'error');
+        } finally {
+          gdriveBtn.disabled = false;
+          gdriveBtn.innerHTML = gdriveBtnDefault;
         }
       });
     }
@@ -12032,47 +12140,214 @@ router.post('/youtube-import', requireAuth, async (req, res) => {
 });
 
 // ===== DROPBOX VIDEO IMPORT =====
+// Task #170 — Accepts BOTH:
+//   1. Direct-download URLs returned by the Dropbox.choose() OAuth
+//      chooser (linkType: 'direct') — the original behaviour.
+//   2. Plain shareable URLs that the user pastes themselves, e.g.
+//        https://www.dropbox.com/s/abc123/file.mp4?dl=0
+//        https://www.dropbox.com/scl/fi/abc123/file.mp4?rlkey=xyz&dl=0
+//      For (2) we normalize the URL by forcing dl=1 so Dropbox returns
+//      the raw file instead of the share-page HTML.
 router.post('/dropbox-import', requireAuth, async (req, res) => {
   try {
-    const { url, name } = req.body;
+    let { url, name } = req.body;
     if (!url) return res.status(400).json({ error: 'Dropbox URL is required' });
 
+    // Normalize a user-pasted share link → direct download URL.
+    // Only touches dl= and st= query params so chooser-supplied direct
+    // links (which already work) are passed through unchanged.
+    const isShareLink = /dropbox\.com\/(s|scl)\//i.test(url) && /\bdl=0\b/i.test(url);
+    if (isShareLink){
+      url = url.replace(/\bdl=0\b/i, 'dl=1');
+    } else if (/dropbox\.com\/(s|scl)\//i.test(url) && !/[?&]dl=/i.test(url)){
+      // No dl= param at all — append dl=1 so Dropbox serves the binary.
+      url += (url.indexOf('?') === -1 ? '?' : '&') + 'dl=1';
+    }
+    // Strip a trailing hash if present (some share links include #).
+    url = url.split('#')[0];
+
+    // Derive a filename guess when the chooser didn't supply one.
+    if (!name){
+      try {
+        const pathPart = new URL(url).pathname.split('/').filter(Boolean).pop();
+        if (pathPart && /\.[a-z0-9]{2,5}$/i.test(pathPart)) name = decodeURIComponent(pathPart);
+      } catch(_){}
+    }
     const ext = path.extname(name || '.mp4') || '.mp4';
     const outputFilename = 'dbx_import_' + Date.now() + '_' + req.user.id + ext;
     const outputPath = path.join(uploadDir, outputFilename);
 
-    // Download from Dropbox direct link
-    const https = require('https');
-    const http = require('http');
-    const protocol = url.startsWith('https') ? https : http;
-
-    await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(outputPath);
-      protocol.get(url, response => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          protocol.get(response.headers.location, res2 => {
-            res2.pipe(file);
-            file.on('finish', () => { file.close(); resolve(); });
-          }).on('error', reject);
-        } else {
-          response.pipe(file);
-          file.on('finish', () => { file.close(); resolve(); });
-        }
-      }).on('error', reject);
-    });
+    // Download from Dropbox direct link. Follow up to 5 redirects so
+    // shareable links that bounce through dl.dropboxusercontent.com
+    // still land at the actual binary.
+    await downloadWithRedirects(url, outputPath, 5);
 
     const metadata = await getVideoMetadata(outputPath);
+
+    // Task #170 — Mirror the upload path: insert into user_uploads
+    // so the 3-day retention loop reaps it, accrue bytes to the
+    // Dashboard storage card, and echo the row id so the client can
+    // wire the × delete button.
+    let uploadRowId = null;
+    try {
+      const sizeBytes = fs.statSync(outputPath).size;
+      const { userUploadOps, storageOps } = require('../db/database');
+      const row = await userUploadOps.insert(req.user.id, {
+        filename:        outputFilename,
+        originalName:    name || outputFilename,
+        serverPath:      outputPath,
+        serveUrl:        '/video-editor/download/' + outputFilename,
+        sizeBytes:       sizeBytes,
+        mimeType:        null,
+        durationSeconds: Number(metadata.duration) || 0,
+        mediaType:       'vid'
+      });
+      uploadRowId = row && row.id;
+      try { await storageOps.addBytes(req.user.id, sizeBytes); } catch(_){}
+    } catch (logErr){
+      console.warn('[dropbox-import] user_uploads insert failed:', logErr && logErr.message);
+    }
 
     res.json({
       filename: outputFilename,
       duration: metadata.duration,
-      serveUrl: '/video-editor/download/' + outputFilename
+      serveUrl: '/video-editor/download/' + outputFilename,
+      uploadId: uploadRowId
     });
   } catch (error) {
     console.error('Dropbox import error:', error);
     res.status(500).json({ error: error.message || 'Failed to import from Dropbox' });
   }
 });
+
+// ===== GOOGLE DRIVE VIDEO IMPORT (Task #170) =====
+// Accepts a user-pasted Google Drive shareable URL and downloads the
+// underlying file. Supports the common share URL shapes:
+//   https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+//   https://drive.google.com/file/d/FILE_ID/edit
+//   https://drive.google.com/open?id=FILE_ID
+//   https://drive.google.com/uc?id=FILE_ID&export=download
+// Large files (>100MB) return an HTML virus-warning page on the
+// classic /uc download endpoint, so we use the newer
+// drive.usercontent.google.com endpoint with confirm=t to bypass.
+// File must be set to "Anyone with the link" for the download to
+// succeed — same constraint that applies on Smart Shorts.
+router.post('/google-drive-import', requireAuth, async (req, res) => {
+  try {
+    const { url, name } = req.body;
+    if (!url) return res.status(400).json({ error: 'Google Drive URL is required' });
+
+    // Extract the file id. Try /file/d/ID first (most common share
+    // shape), then ?id=ID as a fallback for /open and /uc URLs.
+    let fileId = null;
+    const m1 = url.match(/\/file\/d\/([A-Za-z0-9_-]{20,})/);
+    if (m1) fileId = m1[1];
+    if (!fileId){
+      const m2 = url.match(/[?&]id=([A-Za-z0-9_-]{20,})/);
+      if (m2) fileId = m2[1];
+    }
+    if (!fileId) return res.status(400).json({ error: 'Could not find a Google Drive file id in that URL. Make sure the link is a public sharing link.' });
+
+    // Use the modern usercontent endpoint so we skip the virus-warning
+    // interstitial that the classic /uc?export=download endpoint
+    // serves for files larger than ~100MB.
+    const downloadUrl = 'https://drive.usercontent.google.com/download?id=' + fileId + '&export=download&confirm=t';
+
+    // Guess an extension. Drive URLs don't carry the filename so we
+    // default to .mp4 (the editor only supports video sources) and
+    // override later from Content-Disposition if we get one.
+    let ext = path.extname(name || '.mp4') || '.mp4';
+    const outputFilename = 'gd_import_' + Date.now() + '_' + req.user.id + ext;
+    const outputPath = path.join(uploadDir, outputFilename);
+
+    await downloadWithRedirects(downloadUrl, outputPath, 6);
+
+    // Validate we actually got a binary — Drive sometimes returns
+    // HTML (login wall, quota exceeded, etc.) which downloadWithRedirects
+    // would happily write to disk. Reject anything implausibly small.
+    const fileSize = fs.statSync(outputPath).size;
+    if (fileSize < 1024){
+      try { fs.unlinkSync(outputPath); } catch(_){}
+      return res.status(400).json({ error: 'Drive returned no file. Check that the link is set to "Anyone with the link" and that the file is a video.' });
+    }
+
+    let metadata;
+    try {
+      metadata = await getVideoMetadata(outputPath);
+    } catch (metaErr) {
+      try { fs.unlinkSync(outputPath); } catch(_){}
+      return res.status(400).json({ error: 'Drive returned a file that is not a supported video format.' });
+    }
+
+    // Mirror the local-upload bookkeeping (same as /upload and the
+    // refactored /dropbox-import above) so retention + storage stay
+    // consistent across import sources.
+    let uploadRowId = null;
+    try {
+      const { userUploadOps, storageOps } = require('../db/database');
+      const row = await userUploadOps.insert(req.user.id, {
+        filename:        outputFilename,
+        originalName:    name || outputFilename,
+        serverPath:      outputPath,
+        serveUrl:        '/video-editor/download/' + outputFilename,
+        sizeBytes:       fileSize,
+        mimeType:        null,
+        durationSeconds: Number(metadata.duration) || 0,
+        mediaType:       'vid'
+      });
+      uploadRowId = row && row.id;
+      try { await storageOps.addBytes(req.user.id, fileSize); } catch(_){}
+    } catch (logErr){
+      console.warn('[google-drive-import] user_uploads insert failed:', logErr && logErr.message);
+    }
+
+    res.json({
+      filename: outputFilename,
+      duration: metadata.duration,
+      serveUrl: '/video-editor/download/' + outputFilename,
+      uploadId: uploadRowId
+    });
+  } catch (error) {
+    console.error('Google Drive import error:', error);
+    res.status(500).json({ error: error.message || 'Failed to import from Google Drive' });
+  }
+});
+
+// Shared helper used by Dropbox + GDrive imports. Streams the response
+// to disk, following up to `maxHops` redirects. Replaces the ad-hoc
+// inline single-hop redirect handling that lived in /dropbox-import.
+function downloadWithRedirects(startUrl, outPath, maxHops){
+  const https = require('https');
+  const http  = require('http');
+  return new Promise((resolve, reject) => {
+    let hops = 0;
+    function go(currentUrl){
+      if (hops++ > maxHops) return reject(new Error('Too many redirects'));
+      let parsed;
+      try { parsed = new URL(currentUrl); } catch(e){ return reject(new Error('Invalid URL: ' + currentUrl)); }
+      const protocol = parsed.protocol === 'http:' ? http : https;
+      const req = protocol.get(currentUrl, response => {
+        const status = response.statusCode;
+        if (status >= 300 && status < 400 && response.headers.location){
+          // Absolute or relative redirect — resolve against current.
+          response.resume();
+          const next = new URL(response.headers.location, currentUrl).toString();
+          return go(next);
+        }
+        if (status !== 200){
+          response.resume();
+          return reject(new Error('Download failed: HTTP ' + status));
+        }
+        const file = fs.createWriteStream(outPath);
+        response.pipe(file);
+        file.on('finish', () => file.close(() => resolve()));
+        file.on('error', err => { try { fs.unlinkSync(outPath); } catch(_){} reject(err); });
+      });
+      req.on('error', reject);
+    }
+    go(startUrl);
+  });
+}
 
 // ===== TRANSCRIPT GENERATION =====
 router.post('/transcript', requireAuth, async (req, res) => {
@@ -12933,7 +13208,7 @@ router.post('/reverse-clip', requireAuth, async (req, res) => {
 router.post('/ai-voice', requireAuth, async (req, res) => {
   try {
     if (!process.env.OPENAI_API_KEY){
-      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured on the server. Contact support.' });
     }
     var text  = String((req.body || {}).text  || '').trim().slice(0, 4000);
     var voice = String((req.body || {}).voice || 'alloy').toLowerCase();
@@ -12947,46 +13222,121 @@ router.post('/ai-voice', requireAuth, async (req, res) => {
     var VOICES = ['alloy','echo','fable','onyx','nova','shimmer'];
     if (VOICES.indexOf(voice) < 0) voice = 'alloy';
 
+    // Task #172 — Fix "stuck on Synthesizing voice…".
+    // Root cause: OpenAI Node SDK v4 defaults to a 10-MINUTE per-request
+    // timeout. When the TTS endpoint is slow / hangs / hits a transient
+    // network issue, the user was watching the spinner for up to 600s
+    // with no error. Bound the call to 60s, with one automatic retry,
+    // so failures surface as a clean error message within reasonable
+    // wall-clock time.
     var OpenAI = require('openai');
-    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    var mp3Resp = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: voice,
-      input: text,
-      speed: speed,
-      response_format: 'mp3'
+    var openai = new OpenAI({
+      apiKey:     process.env.OPENAI_API_KEY,
+      timeout:    60 * 1000,   // 60s — short TTS payloads finish in 1-5s
+      maxRetries: 1            // retry once on transient SDK errors
     });
+    var mp3Resp;
+    try {
+      mp3Resp = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: voice,
+        input: text,
+        speed: speed,
+        response_format: 'mp3'
+      });
+    } catch (apiErr) {
+      // Surface the most useful field the SDK gives us. APIError carries
+      // .status and .message; APIConnectionTimeoutError just has a
+      // generic name. Either way, give the client something actionable.
+      var status   = (apiErr && apiErr.status) || 500;
+      var hintCode = (apiErr && (apiErr.code || apiErr.name)) || '';
+      var msg      = (apiErr && apiErr.message) || 'TTS request failed';
+      if (/timeout/i.test(msg) || hintCode === 'APIConnectionTimeoutError'){
+        msg = 'TTS request timed out. Please try again.';
+        status = 504;
+      } else if (status === 401){
+        msg = 'OpenAI authentication failed. The API key may be invalid or revoked.';
+      } else if (status === 429){
+        msg = 'OpenAI rate limit hit. Wait a moment and try again.';
+      }
+      console.error('[ai-voice] OpenAI error:', { status: status, code: hintCode, msg: msg });
+      return res.status(status >= 400 && status < 600 ? status : 500).json({ error: msg });
+    }
+
     var buf = Buffer.from(await mp3Resp.arrayBuffer());
+    if (!buf || buf.length < 100){
+      return res.status(502).json({ error: 'OpenAI returned an empty audio response. Please retry.' });
+    }
     var outName = 'voice_' + voice + '_' + Date.now() + '_' + req.user.id + '.mp3';
     var outPath = path.join(uploadDir, outName);
     fs.writeFileSync(outPath, buf);
 
-    // Duration probe
+    // Task #172 — Duration probe with a hard timeout. Without this,
+    // a misconfigured ffprobe binary could leave the promise pending
+    // forever, which would block the response (same hang the SDK
+    // timeout above fixes — closing the second potential hang path).
     var duration = 0;
     try {
-      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
-      var out = await new Promise(function(resolve){
+      var ffprobeLocal = (ffmpegPath || '').replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
         var s = '';
-        var p = spawn(ffprobeLocal, [
-          '-v', 'error',
-          '-show_entries', 'format=duration',
-          '-of', 'default=noprint_wrappers=1:nokey=1',
-          outPath
-        ]);
+        var done = false;
+        var finish = function(v){ if (done) return; done = true; resolve(v); };
+        var hardTimer = setTimeout(function(){
+          try { p && p.kill && p.kill('SIGKILL'); } catch(_){}
+          finish('');
+        }, 5000);
+        var p;
+        try {
+          p = spawn(ffprobeLocal, [
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            outPath
+          ]);
+        } catch (e){
+          clearTimeout(hardTimer);
+          return finish('');
+        }
         p.stdout.on('data', function(d){ s += d.toString(); });
-        p.on('close', function(){ resolve(s); });
-        p.on('error', function(){ resolve(''); });
+        p.on('close', function(){ clearTimeout(hardTimer); finish(s); });
+        p.on('error', function(){ clearTimeout(hardTimer); finish(''); });
       });
-      duration = parseFloat((out || '').trim()) || 0;
+      duration = parseFloat((probeOut || '').trim()) || 0;
     } catch(_){}
+
+    // Task #172 — Mirror the local-upload bookkeeping so generated
+    // voiceovers behave like other media: persisted in user_uploads
+    // (3-day retention), bytes charged to the Dashboard storage card,
+    // and an upload id echoed for the × delete button.
+    var uploadRowId = null;
+    try {
+      var sizeBytes = fs.statSync(outPath).size;
+      var { userUploadOps, storageOps } = require('../db/database');
+      var row = await userUploadOps.insert(req.user.id, {
+        filename:        outName,
+        originalName:    'AI Voice (' + voice + ').mp3',
+        serverPath:      outPath,
+        serveUrl:        '/video-editor/download/' + outName,
+        sizeBytes:       sizeBytes,
+        mimeType:        'audio/mpeg',
+        durationSeconds: Number(duration) || 0,
+        mediaType:       'aud'
+      });
+      uploadRowId = row && row.id;
+      try { await storageOps.addBytes(req.user.id, sizeBytes); } catch(_){}
+    } catch (bookErr){
+      console.warn('[ai-voice] user_uploads insert failed:', bookErr && bookErr.message);
+    }
 
     try { featureUsageOps.log(req.user.id, 'ai_voice_inline').catch(function(){}); } catch(_){}
     res.json({
-      success: true,
+      success:  true,
       mediaUrl: '/video-editor/download/' + outName,
       filename: outName,
-      duration: duration,
-      voice: voice
+      duration: Number(duration) || 0,
+      voice:    voice,
+      uploadId: uploadRowId
     });
   } catch (err){
     console.error('[ai-voice]', err);
@@ -13006,7 +13356,13 @@ var LANGUAGE_NAMES = {
   'ja': 'Japanese', 'zh': 'Simplified Chinese', 'ko': 'Korean',
   'ar': 'Arabic', 'hi': 'Hindi', 'it': 'Italian', 'ru': 'Russian',
   'nl': 'Dutch', 'pl': 'Polish', 'tr': 'Turkish', 'vi': 'Vietnamese',
-  'id': 'Indonesian', 'en': 'English'
+  'id': 'Indonesian', 'en': 'English',
+  // Task #174 — Tagalog + Thai. The Whisper transcription step is
+  // language-agnostic (auto-detects source), and the GPT-4o-mini
+  // translator simply takes the English language name in the prompt,
+  // so adding a new pair here is enough to unlock the language end
+  // to end.
+  'tl': 'Tagalog', 'th': 'Thai'
 };
 router.post('/translate-captions', requireAuth, async (req, res) => {
   try {

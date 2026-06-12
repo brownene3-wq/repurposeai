@@ -22,6 +22,56 @@ if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
 if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
 const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
+
+// === ffmpeg environment audit ============================================
+// Runs once at boot. Reports the binary's existence, stat, executability,
+// the CLIPS_DIR mount info, and ffmpeg's own version + supported codecs.
+// Logs go to Railway deploy output so we can confirm the environment is
+// what we think it is.
+(function auditFfmpegEnv() {
+  try {
+    console.log('[ffmpeg-audit] ffmpegPath =', ffmpegPath);
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+      const st = fs.statSync(ffmpegPath);
+      console.log('[ffmpeg-audit] binary stat: size=' + st.size + ' mode=' + st.mode.toString(8) + ' uid=' + st.uid + ' gid=' + st.gid);
+      try { fs.accessSync(ffmpegPath, fs.constants.X_OK); console.log('[ffmpeg-audit] binary IS executable'); }
+      catch (e) { console.warn('[ffmpeg-audit] binary NOT executable:', e.message); }
+    } else if (ffmpegPath === 'ffmpeg') {
+      try {
+        const which = execSync('which ffmpeg', { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+        console.log('[ffmpeg-audit] PATH ffmpeg resolves to:', which);
+      } catch (e) { console.warn('[ffmpeg-audit] which ffmpeg failed:', e.message); }
+    }
+    // Run `ffmpeg -version` so we know what build we have on Railway.
+    try {
+      const ver = execSync(`${ffmpegPath} -version`, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+      console.log('[ffmpeg-audit] version output (first line):', ver.split('\n')[0]);
+    } catch (e) { console.warn('[ffmpeg-audit] ffmpeg -version failed:', e.message); }
+    // Verify the process can write to CLIPS_DIR.
+    try {
+      if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
+      const probePath = path.join(CLIPS_DIR, '_audit_' + Date.now() + '.tmp');
+      fs.writeFileSync(probePath, 'audit');
+      fs.unlinkSync(probePath);
+      console.log('[ffmpeg-audit] CLIPS_DIR writeable:', CLIPS_DIR);
+    } catch (e) {
+      console.error('[ffmpeg-audit] CLIPS_DIR NOT writeable:', CLIPS_DIR, e.message);
+    }
+    // Confirm uploads/repurpose dir is also writeable + report its location.
+    try {
+      const uplDir = path.join(__dirname, '..', 'uploads', 'repurpose');
+      if (!fs.existsSync(uplDir)) fs.mkdirSync(uplDir, { recursive: true });
+      const probe = path.join(uplDir, '_audit_' + Date.now() + '.tmp');
+      fs.writeFileSync(probe, 'audit');
+      fs.unlinkSync(probe);
+      console.log('[ffmpeg-audit] uploads/repurpose writeable:', uplDir);
+    } catch (e) {
+      console.error('[ffmpeg-audit] uploads/repurpose NOT writeable:', e.message);
+    }
+  } catch (e) {
+    console.error('[ffmpeg-audit] audit threw:', e && e.stack || e);
+  }
+})();
 const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require('../middleware/auth');
 const { requireCredits } = require('../middleware/credits');
 const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
@@ -1658,13 +1708,18 @@ router.get('/', requireAuth, async (req, res) => {
 // AI pipeline as /analyze. Streams SSE updates and returns analysisId on completion.
 const _repurposeMod = require('./repurpose');
 const _fs = require('fs');
-router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single('file'), async (req, res) => {
+
+// Shared analysis pipeline for any uploaded-on-disk source video.
+// Used by /analyze-upload (multer-uploaded file) and /analyze-cloud-url
+// (file we just downloaded from Google Drive / Dropbox to disk).
+// On entry: filePath points at a video/audio file on disk owned by us;
+// fileName is the human-readable display name to store on the analysis.
+// On exit: SSE has been finalized and the file is cleaned up.
+async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
   let sseStarted = false;
-  let filePath = req.file ? req.file.path : null;
   let audioPath = null;
 
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     if (!process.env.OPENAI_API_KEY) {
       return res.status(500).json({ error: 'AI service is not configured. Please contact support.' });
     }
@@ -1680,7 +1735,6 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
     };
 
     const userId = req.user.id;
-    const fileName = req.file.originalname || 'Uploaded File';
 
     sendUpdate({ status: 'extracting_audio', message: 'Extracting audio...' });
     try {
@@ -1736,18 +1790,67 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
     }
     // Move the uploaded file into CLIPS_DIR so the render endpoint can find
     // it. Preserve the original extension (mp4 / mov / mkv / webm).
+    let _persistedPath = null;
+    let _persistedExt = '.mp4';
     try {
-      const _origExt = (path.extname(filePath || '') || '.mp4').toLowerCase();
-      const _persistedPath = path.join(CLIPS_DIR, 'upload-' + analysisId + _origExt);
-      _fs.renameSync(filePath, _persistedPath);
+      _persistedExt = (path.extname(filePath || '') || '.mp4').toLowerCase();
+      _persistedPath = path.join(CLIPS_DIR, 'upload-' + analysisId + _persistedExt);
+      // renameSync fails EXDEV when source + dest are on different
+      // filesystems (Railway uploads/repurpose lives on the app volume
+      // and CLIPS_DIR is on /tmp — different mounts). Try rename
+      // first as a cheap atomic move on same-fs, fall back to
+      // copy+unlink when crossing fs boundaries.
+      try {
+        _fs.renameSync(filePath, _persistedPath);
+      } catch (renameErr) {
+        if (renameErr.code === 'EXDEV') {
+          _fs.copyFileSync(filePath, _persistedPath);
+          try { _fs.unlinkSync(filePath); } catch (_) {}
+        } else {
+          throw renameErr;
+        }
+      }
       // Update filePath so the finally-block doesn't try to delete the now
-      // -moved file (renameSync invalidated the original path).
+      // -moved file (rename/copy+unlink invalidated the original path).
       filePath = null;
       console.log('  [analyze-upload] persisted source video at ' + _persistedPath);
     } catch (mvErr) {
       console.error('  [analyze-upload] failed to persist source:', mvErr.message);
+      _persistedPath = null;
       // Don't abort the analysis — moments still get created, render will
       // just complain about missing source if the user clicks Download Clip.
+    }
+    // R2 backup is async (large file, doesn't block the UX).
+    // Thumbnail extraction is AWAITED at the end of this function
+    // so the client's page-reload always finds it in the DB.
+    if (_persistedPath) {
+      console.log('  [analyze-upload] source persisted OK at ' + _persistedPath + ' — kicking off R2 backup');
+      (async () => {
+        try {
+          const r2 = require('../utils/r2');
+          if (r2.isConfigured()) {
+            const r2Key = 'uploads/' + analysisId + _persistedExt;
+            const bytes = _fs.readFileSync(_persistedPath);
+            const ct = _persistedExt === '.mov' ? 'video/quicktime'
+                     : _persistedExt === '.mkv' ? 'video/x-matroska'
+                     : _persistedExt === '.webm' ? 'video/webm'
+                     : 'video/mp4';
+            const putResult = await r2.putObject(r2Key, bytes, ct);
+            if (putResult && putResult.ok) {
+              await shortsOps.setSourceR2Key(analysisId, r2Key);
+              console.log('  [analyze-upload] source backed up to R2 at ' + r2Key + ' (' + bytes.length + ' bytes)');
+            } else {
+              console.error('  [analyze-upload] R2 putObject failed:', putResult && putResult.error);
+            }
+          } else {
+            console.warn('  [analyze-upload] R2 not configured — uploaded source will be lost on redeploy');
+          }
+        } catch (r2Err) {
+          console.error('  [analyze-upload] R2 backup failed:', r2Err.message);
+        }
+      })();
+    } else {
+      console.error('  [analyze-upload] WARNING: _persistedPath is null — source NOT persisted, all downstream features will fail');
     }
     await shortsOps.updateStatus(analysisId, 'analyzing');
     sendUpdate({ status: 'analyzing', message: 'Analyzing with AI to identify viral moments...' });
@@ -1773,6 +1876,55 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
     await shortsOps.updateMoments(analysisId, moments);
     await shortsOps.updateStatus(analysisId, 'completed');
 
+    // SYNCHRONOUS thumbnail extraction — we await this so the client's
+    // page reload (which is triggered by the SSE 'completed' event
+    // we're about to send) always finds the thumbnail in the DB.
+    // Without this await, there was a race where the page reload hit
+    // /shorts/upload-thumbnail before the background extraction
+    // finished, the endpoint returned 404, and the card fell back to
+    // the music-note overlay.
+    if (_persistedPath) {
+      const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
+      try {
+        console.log('[analyze-upload] starting sync thumbnail extract for ' + analysisId + ' from ' + _persistedPath);
+        const hasVid = await _ffprobeHasVideo(_persistedPath).catch((e) => {
+          console.error('[analyze-upload] ffprobe threw:', e && e.stack || e);
+          return false;
+        });
+        if (!hasVid) {
+          console.warn('[analyze-upload] _ffprobeHasVideo returned false for ' + _persistedPath + ' — skipping thumbnail extract. Audio-only source or ffprobe parse failure.');
+        } else {
+          let extractErr = null;
+          try {
+            await extractFrameAt(_persistedPath, 1.0, thumbOut);
+          } catch (e1) {
+            console.error('[analyze-upload] extractFrameAt @1s FAILED:', e1.message);
+            extractErr = e1;
+            try {
+              await extractFrameAt(_persistedPath, 0, thumbOut);
+              extractErr = null;
+            } catch (e2) {
+              console.error('[analyze-upload] extractFrameAt @0 ALSO FAILED:', e2.message);
+              extractErr = e2;
+            }
+          }
+          if (extractErr) {
+            console.error('[analyze-upload] thumbnail extract failed for ' + analysisId + '. NO thumbnail will be persisted. Real error chain logged above.');
+          } else if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
+            const thumbBytes = _fs.readFileSync(thumbOut);
+            await shortsOps.setThumbnail(analysisId, thumbBytes);
+            console.log('[analyze-upload] thumbnail persisted to DB (' + thumbBytes.length + ' bytes) for ' + analysisId);
+          } else {
+            console.error('[analyze-upload] extractFrameAt returned 0 but ' + thumbOut + ' is missing or too small. size=' + (_fs.existsSync(thumbOut) ? _fs.statSync(thumbOut).size : '(file missing)'));
+          }
+        }
+      } catch (tErr) {
+        console.error('[analyze-upload] sync thumbnail extract path threw:', tErr && tErr.stack || tErr);
+      }
+    } else {
+      console.error('[analyze-upload] _persistedPath is null for ' + analysisId + ' — source was never written to CLIPS_DIR. Thumbnail + R2 backup will be skipped.');
+    }
+
     sendUpdate({ status: 'completed', message: 'Analysis complete!', analysisId, moments });
     res.end();
   } catch (error) {
@@ -1788,6 +1940,181 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
   } finally {
     try { if (filePath && _fs.existsSync(filePath)) _fs.unlinkSync(filePath); } catch (e) {}
     try { if (audioPath && audioPath !== filePath && _fs.existsSync(audioPath)) _fs.unlinkSync(audioPath); } catch (e) {}
+  }
+}
+
+// Thin wrapper — runs multer for a multipart upload, then hands off
+// to the shared analysis helper.
+router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const filePath = req.file.path;
+  const fileName = req.file.originalname || 'Uploaded File';
+  return _runUploadAnalysisOnPath(req, res, filePath, fileName);
+});
+
+// ---- Google Drive / Dropbox import ----------------------------------
+// Given a public shareable URL, normalize to a direct-download URL,
+// stream the file to disk in CLIPS_DIR with a unique temp name, then
+// hand off to _runUploadAnalysisOnPath so the rest of the flow is
+// identical to a local file upload. Errors are surfaced as SSE
+// events to match analyze-upload's protocol.
+function _normalizeCloudUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const url = rawUrl.trim();
+  // Google Drive: https://drive.google.com/file/d/<ID>/view?usp=sharing
+  //               https://drive.google.com/open?id=<ID>
+  //               https://drive.google.com/uc?id=<ID>
+  let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m) m = url.match(/drive\.google\.com\/(?:open|uc)\?(?:[^&]*&)*id=([a-zA-Z0-9_-]+)/);
+  if (m) {
+    const id = m[1];
+    // confirm=t bypasses the "can't scan for viruses" interstitial
+    // that Drive serves for files >100MB. For smaller files it's a no-op.
+    return {
+      source: 'googledrive',
+      downloadUrl: `https://drive.google.com/uc?export=download&id=${id}&confirm=t`,
+      displayName: `Google Drive — ${id}`
+    };
+  }
+  // Dropbox: https://www.dropbox.com/s/abc/foo.mp4?dl=0
+  //          https://www.dropbox.com/scl/fi/abc/foo.mp4?...&dl=0
+  if (/dropbox\.com\//.test(url)) {
+    // Force ?dl=1 for direct download, regardless of existing dl param.
+    let dlUrl;
+    try {
+      const u = new URL(url);
+      u.searchParams.set('dl', '1');
+      // Dropbox content host avoids an extra redirect for some links.
+      if (u.hostname === 'www.dropbox.com') u.hostname = 'dl.dropboxusercontent.com';
+      dlUrl = u.toString();
+    } catch (e) {
+      dlUrl = url.replace(/([?&])dl=0(\b|$)/, '$1dl=1').replace(/^https?:\/\/www\.dropbox\.com/, 'https://dl.dropboxusercontent.com');
+      if (!/[?&]dl=1/.test(dlUrl)) dlUrl += (dlUrl.indexOf('?') === -1 ? '?' : '&') + 'dl=1';
+    }
+    // Pull a filename out of the URL path as a friendly display name.
+    let displayName = 'Dropbox upload';
+    try {
+      const parts = new URL(url).pathname.split('/');
+      const last = parts.filter(Boolean).pop();
+      if (last && /\.[a-z0-9]{2,5}$/i.test(last)) displayName = decodeURIComponent(last);
+    } catch (_) {}
+    return { source: 'dropbox', downloadUrl: dlUrl, displayName };
+  }
+  return null;
+}
+
+router.post('/analyze-cloud-url', requireAuth, async (req, res) => {
+  let sseStarted = false;
+  let tmpPath = null;
+  const sendUpdate = (data) => {
+    try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch (e) {}
+  };
+  const failBefore = (status, msg) => res.status(status).json({ error: msg });
+  const failAfter = (msg) => {
+    try {
+      res.write(`data: ${JSON.stringify({ status: 'error', message: msg })}\n\n`);
+      res.end();
+    } catch (e) {}
+  };
+
+  try {
+    const { url } = req.body || {};
+    const norm = _normalizeCloudUrl(url);
+    if (!norm) return failBefore(400, 'Paste a Google Drive or Dropbox shareable link.');
+    if (!process.env.OPENAI_API_KEY) return failBefore(500, 'AI service is not configured.');
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseStarted = true;
+
+    sendUpdate({ status: 'fetching', message: `Downloading from ${norm.source === 'googledrive' ? 'Google Drive' : 'Dropbox'}…` });
+
+    // Stream the cloud download to a temp file. Cap at 200 MB to
+    // match the multer upload limit. node-fetch v2 returns a Node
+    // Readable stream as `body`, which we pipe straight to disk.
+    const fetch = (typeof globalThis.fetch === 'function')
+      ? globalThis.fetch
+      : require('node-fetch');
+    const dlResp = await fetch(norm.downloadUrl, { redirect: 'follow' });
+    if (!dlResp.ok) {
+      return failAfter(`Cloud download failed (HTTP ${dlResp.status}). Make sure the link is publicly shareable.`);
+    }
+
+    // Pick an extension from the response or URL — defaults to .mp4
+    // for "video/*" + .m4a for "audio/*"; otherwise .bin.
+    const ct = (dlResp.headers.get('content-type') || '').toLowerCase();
+    let ext = '.mp4';
+    if (ct.startsWith('audio/')) ext = '.m4a';
+    else if (ct.startsWith('video/mp4')) ext = '.mp4';
+    else if (ct.startsWith('video/quicktime')) ext = '.mov';
+    else if (ct.startsWith('video/x-matroska')) ext = '.mkv';
+    else if (ct.startsWith('video/webm')) ext = '.webm';
+    else {
+      // Fall back to the URL's file extension if any.
+      const urlExtMatch = (norm.displayName || url || '').match(/\.([a-z0-9]{2,5})(?:\?|$)/i);
+      if (urlExtMatch) ext = '.' + urlExtMatch[1].toLowerCase();
+    }
+
+    const tmpId = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    tmpPath = path.join(CLIPS_DIR, `_cloud_${tmpId}${ext}`);
+
+    const MAX_BYTES = 200 * 1024 * 1024;
+    let received = 0;
+    const writeStream = _fs.createWriteStream(tmpPath);
+    await new Promise((resolve, reject) => {
+      const stream = dlResp.body;
+      if (!stream || typeof stream.on !== 'function') {
+        // WHATWG ReadableStream (undici / global fetch) — adapt.
+        (async () => {
+          try {
+            const reader = stream.getReader();
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              received += value.length;
+              if (received > MAX_BYTES) {
+                writeStream.destroy();
+                reject(new Error('File exceeds 200 MB limit.'));
+                return;
+              }
+              writeStream.write(Buffer.from(value));
+            }
+            writeStream.end(resolve);
+          } catch (e) { writeStream.destroy(); reject(e); }
+        })();
+        return;
+      }
+      stream.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > MAX_BYTES) {
+          stream.destroy(new Error('size_limit'));
+          writeStream.destroy();
+          reject(new Error('File exceeds 200 MB limit.'));
+          return;
+        }
+        writeStream.write(chunk);
+      });
+      stream.on('end', () => writeStream.end(resolve));
+      stream.on('error', (e) => { writeStream.destroy(); reject(e); });
+    });
+
+    // Hand off to the shared upload-analysis flow. It will own the
+    // SSE response from here, including res.end().
+    return _runUploadAnalysisOnPath(req, res, tmpPath, norm.displayName || ('Cloud import (' + norm.source + ')'));
+  } catch (err) {
+    console.error('analyze-cloud-url error:', err);
+    if (!sseStarted) {
+      return failBefore(500, err.message || 'Cloud import failed.');
+    }
+    return failAfter(err.message || 'Cloud import failed.');
+  } finally {
+    // _runUploadAnalysisOnPath rm's the tmp file itself via its own
+    // finally block; this is just a safety net for paths that error
+    // out before the handoff.
+    try { if (tmpPath && _fs.existsSync(tmpPath)) _fs.unlinkSync(tmpPath); } catch (e) {}
   }
 });
 
@@ -3464,15 +3791,119 @@ function findUploadedSourcePath(analysisId) {
   return match ? path.join(CLIPS_DIR, match) : null;
 }
 
-// Extract a single JPEG frame from a video source at the given offset
-// (seconds). Used by the upload-thumbnail endpoints below; the output
-// is small (~10-40 KB) so we don't bother with a concurrency lock.
-function extractFrameAt(sourcePath, atSec, outPath) {
+// Async version of the source resolver that falls back to R2 when
+// /tmp's copy is gone. Returns the local path (after rehydration) or
+// null if the source can't be recovered. The two main causes of a
+// /tmp miss are Railway redeploys (entire /tmp wiped) and disk
+// pressure cleanup (CLIPS_DIR shrinks under storage caps).
+async function resolveUploadedSourcePath(analysisId) {
+  // 1) Cheap path — file is already on disk.
+  const local = findUploadedSourcePath(analysisId);
+  if (local) {
+    // Lazy backfill — if this analysis was created before the R2
+    // backup pipeline shipped (or the backup failed silently), seed
+    // the backup now while the local file is still around. This
+    // makes ALL touched analyses durable across the next /tmp wipe.
+    (async () => {
+      try {
+        const r2 = require('../utils/r2');
+        if (!r2.isConfigured()) return;
+        const existingKey = await shortsOps.getSourceR2Key(analysisId);
+        if (existingKey) return; // already backed up
+        const ext = path.extname(local) || '.mp4';
+        const r2Key = 'uploads/' + analysisId + ext;
+        const bytes = fs.readFileSync(local);
+        const ct = ext === '.mov' ? 'video/quicktime'
+                 : ext === '.mkv' ? 'video/x-matroska'
+                 : ext === '.webm' ? 'video/webm'
+                 : 'video/mp4';
+        await r2.putObject(r2Key, bytes, ct);
+        await shortsOps.setSourceR2Key(analysisId, r2Key);
+        console.log('  [resolver] lazy R2 backfill OK for ' + analysisId + ' (' + bytes.length + ' bytes)');
+      } catch (e) {
+        console.warn('  [resolver] lazy R2 backfill failed for ' + analysisId + ':', e.message);
+      }
+    })();
+    // Same idea for the thumbnail — if it's missing in DB, seed it now.
+    (async () => {
+      try {
+        const existing = await shortsOps.getThumbnail(analysisId);
+        if (existing && existing.length > 256) return;
+        const hasVid = await _ffprobeHasVideo(local).catch(() => false);
+        if (!hasVid) return;
+        const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
+        try { await extractFrameAt(local, 1.0, thumbOut); }
+        catch (e1) { await extractFrameAt(local, 0, thumbOut); }
+        if (fs.existsSync(thumbOut) && fs.statSync(thumbOut).size > 256) {
+          await shortsOps.setThumbnail(analysisId, fs.readFileSync(thumbOut));
+          console.log('  [resolver] lazy thumbnail backfill OK for ' + analysisId);
+        }
+      } catch (e) {
+        console.warn('  [resolver] lazy thumbnail backfill failed for ' + analysisId + ':', e.message);
+      }
+    })();
+    return local;
+  }
+
+  // 2) Slow path — pull from R2 if we have a key on file.
+  try {
+    const r2 = require('../utils/r2');
+    if (!r2.isConfigured()) return null;
+    const r2Key = await shortsOps.getSourceR2Key(analysisId);
+    if (!r2Key) return null;
+    const ext = path.extname(r2Key) || '.mp4';
+    const restorePath = path.join(CLIPS_DIR, 'upload-' + analysisId + ext);
+    // Concurrency guard — if two requests rehydrate the same source
+    // at once, both will try to write the same file; the second one
+    // will overwrite the first but that's fine (idempotent).
+    console.log('  [resolveUploadedSourcePath] /tmp miss for ' + analysisId + ' — pulling from R2: ' + r2Key);
+    const got = await r2.getObject(r2Key);
+    // r2.getObject returns { ok, body, ... }, OR a raw Buffer in
+    // legacy code paths — accept both shapes defensively.
+    const bytes = Buffer.isBuffer(got) ? got : (got && got.ok ? got.body : null);
+    if (!bytes || !bytes.length) {
+      console.warn('  [resolveUploadedSourcePath] R2 returned empty body for ' + r2Key + ': ' + JSON.stringify(got && { ok: got.ok, status: got.status, error: got.error }));
+      return null;
+    }
+    fs.writeFileSync(restorePath, bytes);
+    console.log('  [resolveUploadedSourcePath] rehydrated ' + bytes.length + ' bytes to ' + restorePath);
+    return restorePath;
+  } catch (err) {
+    console.error('  [resolveUploadedSourcePath] R2 restore failed:', err.message);
+    return null;
+  }
+}
+
+// Generate a styled placeholder JPEG when we can't extract a real
+// video frame. Output is 1280x720 with a vertical purple gradient
+// and the title centered, mimicking the polished look of a real
+// thumbnail so the analysis card doesn't fall through to the
+// generic music-note overlay. Used as the last-resort fallback
+// for audio-only uploads, missing-source cases, and any other
+// situation where extractFrameAt would otherwise fail.
+function generatePlaceholderThumb(title, outPath) {
   return new Promise((resolve, reject) => {
+    // Sanitize the title for ffmpeg's drawtext filter — it parses
+    // ':' as a delimiter and uses backslash escaping. Strip control
+    // chars, escape colons + backslashes + single quotes + percents.
+    const safeTitle = (String(title || 'Uploaded video'))
+      .replace(/[\u0000-\u001f]/g, ' ')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\u2019") // smart apostrophe — avoid the drawtext escape mess entirely
+      .replace(/:/g, '\\:')
+      .replace(/%/g, '\\%')
+      .substring(0, 80);
+    // Vertical gradient via geq filter: top-to-bottom from deep
+    // indigo to near-black, matching the platform's surface palette.
+    const vf = [
+      "geq=r='30+(Y/720)*15':g='20+(Y/720)*8':b='50+(Y/720)*30'",
+      `drawtext=text='${safeTitle}':fontsize=58:fontcolor=#e9d8ff:x=(w-tw)/2:y=(h-th)/2:box=0:line_spacing=12`
+    ].join(',');
     const ffArgs = [
       '-y',
-      '-ss', String(Math.max(0, atSec)),
-      '-i', sourcePath,
+      '-f', 'lavfi',
+      '-i', 'color=color=black:size=1280x720:duration=0.1',
+      '-vf', vf,
       '-frames:v', '1',
       '-q:v', '4',
       '-f', 'image2',
@@ -3484,12 +3915,85 @@ function extractFrameAt(sourcePath, atSec, outPath) {
     const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
     proc.stderr.on('data', d => { stderr += d.toString(); });
     proc.on('error', e => settle(reject, e));
-    proc.on('close', code => code === 0
-      ? settle(resolve)
-      : settle(reject, new Error('ffmpeg frame exit ' + code + ': ' + stderr.slice(-200))));
+    proc.on('close', code => {
+      if (code === 0) settle(resolve);
+      else settle(reject, new Error('ffmpeg placeholder exit ' + code + ': ' + stderr.slice(-200)));
+    });
     const timer = setTimeout(() => {
       try { proc.kill('SIGKILL'); } catch (_) {}
-      settle(reject, new Error('ffmpeg frame timeout (20s)'));
+      settle(reject, new Error('ffmpeg placeholder timed out'));
+    }, 8000);
+  });
+}
+
+// Extract a single JPEG frame from a video source at the given offset
+// (seconds). Used by the upload-thumbnail endpoints below; the output
+// is small (~10-40 KB) so we don't bother with a concurrency lock.
+function extractFrameAt(sourcePath, atSec, outPath) {
+  return new Promise((resolve, reject) => {
+    // Pre-flight diagnostic — log everything we know about the input
+    // BEFORE invoking ffmpeg. If the input isn't where we think it is,
+    // ffmpeg's own error will name 'No such file or directory' but
+    // this gives us context to interpret it.
+    const tag = '[extractFrameAt] ' + path.basename(sourcePath || '');
+    try {
+      const exists = sourcePath && fs.existsSync(sourcePath);
+      let stat = null;
+      if (exists) {
+        const st = fs.statSync(sourcePath);
+        stat = { size: st.size, mode: st.mode.toString(8), mtime: st.mtime.toISOString() };
+      }
+      console.log(tag, 'pre-flight:', JSON.stringify({
+        sourcePath, atSec, outPath,
+        sourceExists: exists,
+        sourceStat: stat,
+        ffmpegPath
+      }));
+    } catch (preErr) {
+      console.warn(tag, 'pre-flight check threw:', preErr.message);
+    }
+    // -loglevel verbose makes ffmpeg dump format detection, codec
+    // negotiation, and per-frame timestamps to stderr. -nostdin
+    // stops it waiting on stdin if it ever opens it. -hide_banner
+    // trims the version chatter at startup so the actual error is
+    // easier to read.
+    const ffArgs = [
+      '-y',
+      '-hide_banner',
+      '-nostdin',
+      '-loglevel', 'verbose',
+      '-ss', String(Math.max(0, atSec)),
+      '-i', sourcePath,
+      '-frames:v', '1',
+      '-q:v', '4',
+      '-f', 'image2',
+      outPath
+    ];
+    console.log(tag, 'spawn:', ffmpegPath, ffArgs.join(' '));
+    const proc = spawn(ffmpegPath, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let settled = false;
+    const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
+    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.on('error', e => {
+      console.error(tag, 'spawn error:', e && e.stack || e);
+      settle(reject, e);
+    });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log(tag, 'exit 0 — output exists:', fs.existsSync(outPath), 'size:', fs.existsSync(outPath) ? fs.statSync(outPath).size : '(missing)');
+        settle(resolve);
+      } else {
+        // Dump the FULL stderr so we can see exactly what ffmpeg
+        // complained about. No truncation.
+        console.error(tag, 'exit ' + code + '. FULL STDERR follows:\n' + stderr);
+        settle(reject, new Error('ffmpeg frame exit ' + code + ': ' + stderr.slice(-800)));
+      }
+    });
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch (_) {}
+      console.error(tag, 'timeout (20s). Partial stderr so far:\n' + stderr);
+      settle(reject, new Error('ffmpeg frame timeout (20s): ' + stderr.slice(-400)));
     }, 20000);
   });
 }
@@ -3502,6 +4006,8 @@ function extractFrameAt(sourcePath, atSec, outPath) {
 // ~50-150ms once per source.
 function _ffprobeHasVideo(sourcePath) {
   return new Promise((resolve) => {
+    const tag = '[ffprobeHasVideo] ' + path.basename(sourcePath || '');
+    console.log(tag, 'probe start. sourcePath=' + sourcePath + ' exists=' + (sourcePath && fs.existsSync(sourcePath)));
     const proc = spawn(ffmpegPath, ['-hide_banner', '-i', sourcePath], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     proc.stderr.on('data', d => { stderr += d.toString(); });
@@ -3514,6 +4020,7 @@ function _ffprobeHasVideo(sourcePath) {
       //   Stream #0:0(eng): Audio: aac, ...
       // For audio-only sources only the Audio line is present.
       const hasVideo = /Stream #\d+:\d+(?:\(\w+\))?: Video:/i.test(stderr);
+      console.log(tag, 'probe done. hasVideo=' + hasVideo + ' stderr-tail:\n' + stderr.slice(-600));
       resolve(hasVideo);
     };
     proc.on('close', finish);
@@ -3562,28 +4069,56 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
       return sendBytes(bytes);
     }
 
-    // 3) Live extract from source.
-    const sourcePath = findUploadedSourcePath(analysisId);
+    // 3) Live extract from source. NO PLACEHOLDER MASKING — every
+    //    failure path returns a clear error response so the real
+    //    issue is visible to the operator and in the browser
+    //    console. Logs include the FULL ffmpeg stderr chain.
+    console.log('[upload-thumbnail] live extract for analysis ' + analysisId);
+    const sourcePath = await resolveUploadedSourcePath(analysisId);
     if (!sourcePath) {
+      console.error('[upload-thumbnail] source missing for ' + analysisId + ' (no /tmp file, no R2 key in DB)');
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
     }
-    // Probe for a usable video stream — audio-only podcast uploads
-    // would otherwise produce a black frame that's worse than no
-    // image. Same noVideoSource signal as the moment-thumbnail path.
+    console.log('[upload-thumbnail] resolved source path for ' + analysisId + ': ' + sourcePath);
+
+    // Probe for a usable video stream. Audio-only uploads correctly
+    // get a 404 + noVideoSource so the client paints its own overlay.
     const mainHasVideo = await _ffprobeHasVideo(sourcePath);
     if (!mainHasVideo) {
-      console.log('  upload-thumbnail: source has no video stream (audio-only upload) for analysis ' + analysisId);
+      console.warn('[upload-thumbnail] _ffprobeHasVideo returned false for ' + analysisId + ' source=' + sourcePath);
       return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
     }
+
+    let extractError = null;
     try {
       await extractFrameAt(sourcePath, 1.0, outPath);
     } catch (e) {
-      try { await extractFrameAt(sourcePath, 0, outPath); } catch (e2) {
-        console.error('  upload-thumbnail extract failed:', e2.message);
-        return res.status(500).end();
+      console.error('[upload-thumbnail] extract @1s failed for ' + analysisId + ': ' + e.message);
+      extractError = e;
+      try {
+        await extractFrameAt(sourcePath, 0, outPath);
+        extractError = null;
+      } catch (e2) {
+        console.error('[upload-thumbnail] extract @0 also failed for ' + analysisId + ': ' + e2.message);
+        extractError = e2;
       }
     }
-    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) return res.status(500).end();
+    if (extractError) {
+      // Surface the real ffmpeg error to the caller. No masking.
+      return res.status(500).json({
+        error: 'Thumbnail extraction failed',
+        ffmpegError: extractError.message,
+        analysisId,
+        sourcePath
+      });
+    }
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) {
+      console.error('[upload-thumbnail] extract returned 0 but output is missing/empty for ' + analysisId);
+      return res.status(500).json({
+        error: 'Thumbnail extraction produced empty output',
+        analysisId
+      });
+    }
     const bytes = fs.readFileSync(outPath);
     // Persist to DB so future requests survive /tmp wipes.
     shortsOps.setThumbnail(analysisId, bytes).catch(e =>
@@ -3610,7 +4145,7 @@ router.get('/upload-source/:analysisId', requireAuth, async (req, res) => {
     const analysis = await shortsOps.getById(analysisId);
     if (!analysis || analysis.user_id !== req.user.id) return res.status(404).end();
     if (!(analysis.video_url || '').startsWith('upload://')) return res.status(400).end();
-    const sourcePath = findUploadedSourcePath(analysisId);
+    const sourcePath = await resolveUploadedSourcePath(analysisId);
     if (!sourcePath) return res.status(404).json({ error: 'Uploaded source missing' });
     // Best-effort MIME hint based on extension. Browsers tolerate
     // 'video/mp4' even for .mov containers since they're H.264 internally.
@@ -3669,17 +4204,18 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       return sendBytes(bytes);
     }
 
-    // 3) Live extract
-    const sourcePath = findUploadedSourcePath(analysisId);
+    // 3) Live extract — surface real errors, no placeholder masking.
+    const sourcePath = await resolveUploadedSourcePath(analysisId);
     if (!sourcePath) {
+      console.error('[upload-moment-thumbnail] source missing for ' + analysisId + '/m' + momentIdx);
       return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
     }
+
     // Probe first: audio-only sources produce black frames at every
-    // seek position. Short-circuit with 404 + noVideoSource so the
-    // client paints the gradient/title placeholder instead.
+    // seek position. Short-circuit with 404 + noVideoSource.
     const hasVideo = await _ffprobeHasVideo(sourcePath);
     if (!hasVideo) {
-      console.log('  upload-moment-thumbnail: source has no video stream for analysis ' + analysisId);
+      console.warn('[upload-moment-thumbnail] source has no video stream for ' + analysisId + ' source=' + sourcePath);
       return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
     }
     let startSec = 0, endSec = 0;
@@ -3740,7 +4276,14 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       } catch (fbErr) {
         console.error('  upload-moment-thumbnail main-thumb fallback failed:', fbErr.message);
       }
-      return res.status(500).end();
+      // No placeholder masking — surface the real failure so the
+      // operator sees what ffmpeg actually complained about.
+      return res.status(500).json({
+        error: 'Moment thumbnail extraction failed',
+        ffmpegError: lastErr && lastErr.message,
+        analysisId,
+        momentIdx
+      });
     }
     const bytes = fs.readFileSync(outPath);
     shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
@@ -3832,7 +4375,7 @@ router.get('/moment-preview/:analysisId/:momentIdx', requireAuth, async (req, re
     const isUpload = (analysis.video_url || '').startsWith('upload://');
     let videoId = null, videoUrl = analysis.video_url, sourceVideoPath = null;
     if (isUpload) {
-      sourceVideoPath = findUploadedSourcePath(analysisId);
+      sourceVideoPath = await resolveUploadedSourcePath(analysisId);
       if (!sourceVideoPath) return res.status(404).json({ error: 'Uploaded source missing — re-upload the video.' });
     } else {
       const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
@@ -4236,7 +4779,7 @@ router.get('/calendar', requireAuth, async (req, res) => {
 //   publishToConnection immediately.
 router.post('/api/publish-moment', requireAuth, async (req, res) => {
   try {
-    const { analysisId, momentIndex, connectionId, title, caption, description, scheduledAt } = req.body || {};
+    const { analysisId, momentIndex, connectionId, title, caption, description, scheduledAt, customMediaFilename } = req.body || {};
     if (!analysisId || momentIndex == null) return res.status(400).json({ success: false, error: 'analysisId and momentIndex are required' });
     if (!connectionId) return res.status(400).json({ success: false, error: 'connectionId is required' });
 
@@ -4285,28 +4828,49 @@ router.post('/api/publish-moment', requireAuth, async (req, res) => {
       }
     }
 
-    // Post-now path — we need a media path on disk. Use the shared
-    // resolver: it checks /tmp first (hot path), then waits out the
-    // rename race if a render is in flight, then falls back to the
-    // clip_renders DB row + R2 backup so the publish still works after
-    // Railway wipes /tmp on redeploy.
-    const { resolveClipPath } = require('../utils/clipResolver');
-    const resolved = await resolveClipPath(req.user.id, analysisId, momentIndex, clipRenderOps, { waitForInFlight: true });
-    if (!resolved || !resolved.path) {
-      // Tailor the error message based on why we couldn't resolve.
-      // 'no-db-row' means the user never rendered this clip → original
-      // message. Anything else means we tried R2 and failed → friendlier
-      // recovery hint.
-      const reason = resolved && resolved.reason || 'unknown';
-      const msg = reason === 'no-db-row' || reason === 'missing-args'
-        ? 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.'
-        : 'Your clip is on file but couldn\'t be restored to the server right now. Click "Re-render" on the clip in My Clips and try Publish again.';
-      console.warn('[publish-moment] resolveClipPath failed:', reason, 'analysis=' + analysisId + ' moment=' + momentIndex);
-      return res.status(409).json({ success: false, error: msg });
-    }
-    const mediaPath = resolved.path;
-    if (resolved.source === 'r2-restored') {
-      console.log('[publish-moment] restored clip from R2:', mediaPath);
+    // Post-now path — we need a media path on disk. Two ways to get it:
+    //   1. customMediaFilename — caller (e.g. AI Narration) supplies an
+    //      already-rendered file (the narrated mp4). We validate it's
+    //      a basename in CLIPS_DIR + that it sits next to a
+    //      *_narrated_* or matching analysisId pattern so a malicious
+    //      client can't publish someone else's clip.
+    //   2. resolveClipPath — the default flow. /tmp hot path, waits
+    //      out in-flight renders, then DB+R2 fallback.
+    let mediaPath = null;
+    if (customMediaFilename) {
+      const path = require('path');
+      const fs = require('fs');
+      const safeName = path.basename(String(customMediaFilename));
+      const candidate = path.join(CLIPS_DIR, safeName);
+      // Authorization: the file must include this analysis's ID in
+      // its name (clip filenames embed _a<analysisId>_ — see
+      // /shorts/clip's safeTitle + analysisTag construction) so a
+      // client can't supply someone else's filename.
+      const expectedTag = 'a' + analysisId;
+      if (safeName.indexOf(expectedTag) === -1) {
+        console.warn('[publish-moment] customMediaFilename ownership check failed:', safeName, 'expectedTag=' + expectedTag);
+        return res.status(403).json({ success: false, error: 'customMediaFilename does not match analysis' });
+      }
+      if (!fs.existsSync(candidate)) {
+        return res.status(404).json({ success: false, error: 'Custom media file not found on server. The render may have been cleaned up — re-generate and try again.' });
+      }
+      mediaPath = candidate;
+      console.log('[publish-moment] using customMediaFilename:', mediaPath);
+    } else {
+      const { resolveClipPath } = require('../utils/clipResolver');
+      const resolved = await resolveClipPath(req.user.id, analysisId, momentIndex, clipRenderOps, { waitForInFlight: true });
+      if (!resolved || !resolved.path) {
+        const reason = resolved && resolved.reason || 'unknown';
+        const msg = reason === 'no-db-row' || reason === 'missing-args'
+          ? 'No rendered clip found. Click "Download Clip" first to render the file, then try Publish again.'
+          : 'Your clip is on file but couldn\'t be restored to the server right now. Click "Re-render" on the clip in My Clips and try Publish again.';
+        console.warn('[publish-moment] resolveClipPath failed:', reason, 'analysis=' + analysisId + ' moment=' + momentIndex);
+        return res.status(409).json({ success: false, error: msg });
+      }
+      mediaPath = resolved.path;
+      if (resolved.source === 'r2-restored') {
+        console.log('[publish-moment] restored clip from R2:', mediaPath);
+      }
     }
 
     const resolvedTitle = title || moment.title || ('Viral moment ' + (momentIndex + 1));
@@ -5162,18 +5726,11 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
     // For YouTube URLs, this is unchanged from before.
     let videoId, videoUrl, uploadedSourcePath = null;
     if ((analysis.video_url || '').startsWith('upload://')) {
-      let _files = [];
-      try { _files = fs.readdirSync(CLIPS_DIR); } catch (e) {}
-      const _match = _files.find(f =>
-        f.startsWith('upload-' + analysisId + '.') &&
-        !f.endsWith('.mp3') &&
-        !f.endsWith('.progress') &&
-        !f.endsWith('.error')
-      );
-      if (!_match) {
+      // Use the durable resolver — pulls from R2 if /tmp's copy is gone.
+      uploadedSourcePath = await resolveUploadedSourcePath(analysisId);
+      if (!uploadedSourcePath) {
         return res.status(404).json({ error: 'Uploaded source file is missing on the server. The server may have restarted — please re-upload the video.' });
       }
-      uploadedSourcePath = path.join(CLIPS_DIR, _match);
       videoId = 'upload-' + analysisId;
       videoUrl = analysis.video_url;
     } else {
@@ -5271,14 +5828,24 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
       });
     };
 
-    // Process in background (non-blocking - keeps event loop alive for health checks)
+    // Process in background (non-blocking - keeps event loop alive
+    // for health checks AND continues even if the client disconnects
+    // — tab switches / navigations / page refreshes won't interrupt
+    // the render; the client just reconnects to the .progress file
+    // when it returns.)
+    //
+    // Initial progress write — must happen before any work that
+    // might throw, so the status endpoint never reports the stale
+    // default 'Still processing...' (which polling code treats as
+    // 'no info yet' and stalls on).
+    writeProgress(uploadedSourcePath ? 'Using uploaded source video...' : 'Starting download...');
     (async () => {
       const timeout = setTimeout(() => {
         writeError('Clip generation timed out after 8 minutes. Try a shorter moment or one closer to the start.');
       }, 480000);
 
       try {
-        writeProgress('Downloading video...');
+        if (!uploadedSourcePath) writeProgress('Downloading video...');
 
         // Check if yt-dlp is available
         let ytdlpPath = 'yt-dlp';
@@ -5607,8 +6174,18 @@ router.post('/clip', requireAuth, checkPlanLimit('clipsPerMonth'), async (req, r
             if (put.ok) {
               r2Key = key;
               console.log('  Uploaded to R2: ' + key + ' (' + (bytes.length / 1024 / 1024).toFixed(1) + 'MB)');
-              // Safe to delete local copy now — R2 has it.
-              try { fs.unlinkSync(outputPath); } catch (e) {}
+              // DON'T unlink the local copy immediately — that races
+              // with any follow-up operation (AI Narration ffmpeg
+              // mux, B-Roll, Download Clip) that uses the same path.
+              // /narrate's existence check would pass, then the
+              // unlink fires before ffmpeg opens the file, and the
+              // mux step dies with 'No such file or directory'.
+              // Defer the unlink so it's still bounded but never
+              // races with the immediate next operation.
+              setTimeout(() => {
+                try { fs.unlinkSync(outputPath); } catch (e) {}
+                console.log('  Deferred local cleanup: ' + outputPath);
+              }, 15 * 60 * 1000);
             } else {
               console.error('  R2 upload failed: ' + (put.error || put.status));
             }
@@ -5832,6 +6409,242 @@ router.get('/clip/debug', requireAuth, (req, res) => {
     res.json({ error: err.message, clips_dir: CLIPS_DIR });
   }
 });
+// === Narration v2 metadata ============================================
+// Per-style intensity options + system-prompt fragments. Used by both
+// the modal (to populate intensity selectors) and the /narrate route
+// (to feed GPT the right tone instruction).
+const NARRATION_STYLE_META = {
+  funny: {
+    label: 'Funny',
+    icon: '\u{1F602}',
+    intensities: [
+      { id: 'lightly_playful', label: 'Lightly playful', prompt: 'Keep it subtle and gently witty — one quick joke max.' },
+      { id: 'classic',         label: 'Classic comedic', prompt: 'Standard comedic delivery — punchlines and timing matter.' },
+      { id: 'bold',            label: 'Bold comedic',    prompt: 'Go all-in on the joke. Big energy, surprising punchline, no holding back.' }
+    ]
+  },
+  documentary: {
+    label: 'Documentary',
+    icon: '\u{1F3AC}',
+    intensities: [
+      { id: 'observational',   label: 'Observational',   prompt: 'Calm, observational voice. Let the content speak for itself.' },
+      { id: 'authoritative',   label: 'Authoritative',   prompt: 'Confident, structured, slightly formal — like a Netflix doc.' },
+      { id: 'dramatic_nonfic', label: 'Dramatic non-fiction', prompt: 'Build narrative tension. Use pauses. Stakes feel real.' }
+    ]
+  },
+  dramatic: {
+    label: 'Dramatic',
+    icon: '\u{1F3AD}',
+    intensities: [
+      { id: 'restrained', label: 'Restrained',  prompt: 'Hold back. Let small details carry weight.' },
+      { id: 'intense',    label: 'Intense',     prompt: 'Charge the room. Direct, urgent, no fluff.' },
+      { id: 'theatrical', label: 'Theatrical',  prompt: 'Lean into the drama. Big phrases, deliberate pacing.' }
+    ]
+  },
+  hype: {
+    label: 'Hype',
+    icon: '\u{1F525}',
+    intensities: [
+      { id: 'steady_energy', label: 'Steady energy', prompt: 'Sustained high energy without screaming.' },
+      { id: 'peak_hype',     label: 'Peak hype',     prompt: 'Build to a roar. Short sentences. ALL CAPS moments.' },
+      { id: 'max_intensity', label: 'Max intensity', prompt: 'Go full sports-announcer. Every word matters. Big.' }
+    ]
+  },
+  sarcastic: {
+    label: 'Sarcastic',
+    icon: '\u{1F60F}',
+    intensities: [
+      { id: 'dry',      label: 'Dry',      prompt: 'Bone-dry delivery. Let the audience catch it.' },
+      { id: 'biting',   label: 'Biting',   prompt: 'Sharper edge, more obvious irony.' },
+      { id: 'deadpan',  label: 'Deadpan',  prompt: 'Completely flat. No inflection. Comedy through contrast.' }
+    ]
+  },
+  storytime: {
+    label: 'Storytime',
+    icon: '\u{1F4D6}',
+    intensities: [
+      { id: 'conversational', label: 'Conversational', prompt: 'Like telling a friend at a coffee shop.' },
+      { id: 'intimate',       label: 'Intimate',       prompt: 'Quieter, slower, draws the listener in.' },
+      { id: 'theatrical',     label: 'Theatrical',     prompt: 'Audiobook-narrator vibes — characters, pauses, voices.' }
+    ]
+  },
+  news: {
+    label: 'News',
+    icon: '\u{1F4FA}',
+    intensities: [
+      { id: 'neutral',  label: 'Neutral',  prompt: 'Clean anchor-desk delivery. No opinion.' },
+      { id: 'breaking', label: 'Breaking', prompt: 'Urgent, present-tense, the story is unfolding NOW.' },
+      { id: 'somber',   label: 'Somber',   prompt: 'Reflective, slower, weight on every word.' }
+    ]
+  },
+  poetic: {
+    label: 'Poetic',
+    icon: '\u{1F4DD}',
+    intensities: [
+      { id: 'whispered',  label: 'Whispered',  prompt: 'Quiet, breathy, almost in the listener\u2019s ear.' },
+      { id: 'lyrical',    label: 'Lyrical',    prompt: 'Musical cadence. Imagery-driven. Rhythmic.' },
+      { id: 'declamatory',label: 'Declamatory',prompt: 'Spoken-word performance. Bold imagery, strong meter.' }
+    ]
+  }
+};
+function _styleIntensityPrompt(style, intensityId) {
+  const meta = NARRATION_STYLE_META[style];
+  if (!meta) return '';
+  const found = meta.intensities.find(x => x.id === intensityId) || meta.intensities[1];
+  return found ? found.prompt : '';
+}
+
+// Narration Direction presets — additional system-prompt fragments
+// that nudge the AI toward a specific narrative shape. Independent of
+// style, so a 'Funny / Bold' clip can ALSO be directed to 'Hook in 3s'.
+const NARRATION_DIRECTIONS = {
+  auto:          { label: 'Auto — let AI decide', prompt: '' },
+  hook_first:    { label: 'Hook viewer in first 3 seconds', prompt: 'OPEN with a punchy hook in the first sentence. Make scroll-stopping the priority over context.' },
+  build_curio:   { label: 'Build curiosity then reveal',    prompt: 'OPEN with a question or setup. WITHHOLD the payoff until the final 3 seconds. End with the reveal.' },
+  one_insight:   { label: 'Drive home a single insight',    prompt: 'Pick the SINGLE strongest takeaway and structure the entire narration around it. Repeat it twice with different framings.' },
+  emotional:     { label: 'Make it emotional and personal', prompt: 'Use second person (you/your). Speak to a personal moment the viewer might recognize. Warmth over wit.' },
+  counterintuit: { label: 'Sound surprising and counterintuitive', prompt: 'Lead with what seems obvious, then flip it. Use phrases like "actually", "wait", "the opposite is true".' },
+  informational: { label: 'Informative and structured',     prompt: 'Use clear discourse markers — first, then, finally. Prioritize information density over performance.' }
+};
+function _directionPrompt(directionId) {
+  const dir = NARRATION_DIRECTIONS[directionId] || NARRATION_DIRECTIONS.auto;
+  return dir.prompt || '';
+}
+
+// OpenAI TTS catalog — used by the voice picker + sample endpoint.
+// 6 built-in voices, each tagged with a description so users can
+// pick by vibe instead of name.
+const OPENAI_VOICES = [
+  { voice_id: 'alloy',   name: 'Alloy',   description: 'Neutral, balanced. Good default.' },
+  { voice_id: 'echo',    name: 'Echo',    description: 'Mid-range male. Warm and steady.' },
+  { voice_id: 'fable',   name: 'Fable',   description: 'British male. Energetic and clear.' },
+  { voice_id: 'onyx',    name: 'Onyx',    description: 'Deep male. Authoritative documentary.' },
+  { voice_id: 'nova',    name: 'Nova',    description: 'Mid-range female. Bright and clear.' },
+  { voice_id: 'shimmer', name: 'Shimmer', description: 'Female. Warm storytelling voice.' }
+];
+
+// GET /voice-catalog — returns the full picker payload: OpenAI built-in
+// voices, plus the user's ElevenLabs voices if they have a key set.
+router.get('/voice-catalog', requireAuth, async (req, res) => {
+  try {
+    const out = {
+      openai: OPENAI_VOICES,
+      elevenlabs: [],
+      styles: NARRATION_STYLE_META,
+      directions: NARRATION_DIRECTIONS
+    };
+    try {
+      const brandKit = await brandKitOps.getByUserId(req.user.id);
+      const apiKey = brandKit && brandKit.elevenlabs_api_key;
+      if (apiKey) {
+        const elResp = await fetch('https://api.elevenlabs.io/v1/voices', {
+          headers: { 'xi-api-key': apiKey }
+        });
+        if (elResp.ok) {
+          const data = await elResp.json();
+          out.elevenlabs = (data.voices || []).map(v => ({
+            voice_id: v.voice_id,
+            name: v.name,
+            description: (v.labels && (v.labels.description || v.labels.use_case)) || (v.category || 'Custom voice')
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('[voice-catalog] ElevenLabs fetch failed:', e.message);
+    }
+    res.json(out);
+  } catch (err) {
+    console.error('voice-catalog error:', err);
+    res.status(500).json({ error: 'Failed to load voice catalog' });
+  }
+});
+
+// POST /narrate-sample — Returns a 5-second TTS sample for a (provider,
+// voiceId, style, intensity) tuple. Cached per-key in R2 so repeat
+// plays + the deploy-time pre-render only pay the TTS cost once.
+// Body: { provider, voiceId, style, intensity }
+const NARRATION_SAMPLE_SCRIPTS = {
+  funny:        'Wait, hold on, you have got to hear this part, it is wild.',
+  documentary:  'What happened next would change everything about how we understood the moment.',
+  dramatic:     'And in that single instant, everything was different. Nothing the same again.',
+  hype:         'Three. Two. One. Let\u2019s go. This is what you came for, right now.',
+  sarcastic:    'Oh, perfect. Yes, that is exactly what we all needed today. Genius move.',
+  storytime:    'So picture this. It is late, the lights are low, and nobody saw it coming.',
+  news:         'Breaking now: developments on the story we have been following all morning.',
+  poetic:       'A whispered breath, a turning page. The quiet weight of what comes next.'
+};
+router.post('/narrate-sample', requireAuth, async (req, res) => {
+  try {
+    const { provider, voiceId, style, intensity } = req.body || {};
+    if (!provider || !voiceId || !style) {
+      return res.status(400).json({ error: 'provider, voiceId, and style are required' });
+    }
+    const text = NARRATION_SAMPLE_SCRIPTS[style] || NARRATION_SAMPLE_SCRIPTS.funny;
+    const safeIntensity = (intensity || 'classic').replace(/[^a-z0-9_]/gi, '');
+    const key = `narration-samples/${provider}/${encodeURIComponent(voiceId)}/${style}_${safeIntensity}.mp3`;
+    // 1) R2 cache hit?
+    try {
+      if (r2.isConfigured()) {
+        const got = await r2.getObject(key);
+        const body = Buffer.isBuffer(got) ? got : (got && got.ok ? got.body : null);
+        if (body && body.length > 1024) {
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Cache-Control', 'private, max-age=86400');
+          return res.end(body);
+        }
+      }
+    } catch (e) {
+      console.warn('[narrate-sample] R2 cache read failed:', e.message);
+    }
+    // 2) Live generate via the provider.
+    let mp3 = null;
+    if (provider === 'openai') {
+      const validVoices = OPENAI_VOICES.map(v => v.voice_id);
+      if (!validVoices.includes(voiceId)) {
+        return res.status(400).json({ error: 'Invalid OpenAI voice' });
+      }
+      const speech = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: voiceId,
+        input: text
+      });
+      mp3 = Buffer.from(await speech.arrayBuffer());
+    } else if (provider === 'elevenlabs') {
+      const brandKit = await brandKitOps.getByUserId(req.user.id);
+      const apiKey = brandKit && brandKit.elevenlabs_api_key;
+      if (!apiKey) {
+        return res.status(412).json({ error: 'ElevenLabs API key not configured. Add it in Settings.' });
+      }
+      const elResp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+        method: 'POST',
+        headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, model_id: 'eleven_turbo_v2_5' })
+      });
+      if (!elResp.ok) {
+        const tx = await elResp.text().catch(() => '');
+        return res.status(502).json({ error: 'ElevenLabs TTS failed: ' + tx.slice(0, 200) });
+      }
+      mp3 = Buffer.from(await elResp.arrayBuffer());
+    } else {
+      return res.status(400).json({ error: 'Unknown provider: ' + provider });
+    }
+    // 3) Cache the result for next time.
+    try {
+      if (r2.isConfigured() && mp3 && mp3.length > 1024) {
+        await r2.putObject(key, mp3, 'audio/mpeg');
+      }
+    } catch (e) {
+      console.warn('[narrate-sample] R2 cache write failed:', e.message);
+    }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    return res.end(mp3);
+  } catch (err) {
+    console.error('narrate-sample error:', err);
+    res.status(500).json({ error: err.message || 'Sample generation failed' });
+  }
+});
+
 // POST /narrate - Generate narration for a clip
 router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async (req, res) => {
   try {
@@ -5841,8 +6654,14 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
     }
 
 
-    const { analysisId, momentIndex, narrationStyle, voiceEnabled, audioMix, clipFilename,
-            ttsProvider, elevenlabsVoiceId } = req.body;
+    const {
+      analysisId, momentIndex, narrationStyle, voiceEnabled, audioMix, clipFilename,
+      ttsProvider, elevenlabsVoiceId,
+      // v2 params (all optional — defaults preserve v1 behavior)
+      narrationIntensity, narrationDirection,
+      narrationLevel, originalLevel, loudnessTarget,
+      openaiVoiceId
+    } = req.body;
 
     // Validate inputs
     if (!analysisId || momentIndex === undefined || !narrationStyle || !clipFilename) {
@@ -5853,6 +6672,16 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
     if (!validStyles.includes(narrationStyle)) {
       return res.status(400).json({ error: `Invalid narration style. Must be one of: ${validStyles.join(', ')}` });
     }
+    // Numeric levels — clamp 0..1 so a malicious client can't pass NaN
+    // or huge numbers. Defaults match v1: narration 100%, original 30%.
+    const _narrLvl = Math.max(0, Math.min(1, Number(narrationLevel)));
+    const _origLvl = Math.max(0, Math.min(1, Number(originalLevel)));
+    const NARR_LVL = Number.isFinite(_narrLvl) ? _narrLvl : 1.0;
+    const ORIG_LVL = Number.isFinite(_origLvl) ? _origLvl : (audioMix === 'replace' ? 0 : 0.3);
+    // Loudness target — broadcast (-16), streaming (-14), loud (-10).
+    // Maps to ffmpeg's loudnorm I=value.
+    const validLoudness = ['-16', '-14', '-10'];
+    const LOUD_TGT = validLoudness.includes(String(loudnessTarget)) ? String(loudnessTarget) : '-14';
 
     // Get analysis
     const analysis = await shortsOps.getById(analysisId);
@@ -5870,10 +6699,34 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
       return res.status(404).json({ error: 'Moment not found' });
     }
 
-    // Verify clip file exists
+    // Verify clip file exists — fall back to R2 restore on miss.
+    // This protects against the unlink-after-R2 race in /shorts/clip
+    // (now deferred but defense in depth) and Railway /tmp wipes.
     const clipPath = path.join(CLIPS_DIR, clipFilename);
     if (!fs.existsSync(clipPath)) {
-      return res.status(404).json({ error: 'Clip file not found', needsRegeneration: true });
+      let restored = false;
+      try {
+        const r2 = require('../utils/r2');
+        if (r2.isConfigured()) {
+          const r2Key = 'clips/' + clipFilename;
+          const got = await r2.getObject(r2Key);
+          // r2.getObject returns { ok, body } on success. Accept a
+          // raw Buffer too for legacy callers.
+          const body = Buffer.isBuffer(got) ? got : (got && got.ok ? got.body : null);
+          if (body && body.length > 10000) {
+            fs.writeFileSync(clipPath, body);
+            restored = true;
+            console.log('  [narrate] restored clip from R2: ' + r2Key + ' (' + body.length + ' bytes)');
+          } else if (got && got.error) {
+            console.warn('  [narrate] R2 fetch reported error: ' + got.error);
+          }
+        }
+      } catch (e) {
+        console.warn('  [narrate] R2 restore failed:', e.message);
+      }
+      if (!restored) {
+        return res.status(404).json({ error: 'Clip file not found', needsRegeneration: true });
+      }
     }
 
     // Generate output filename
@@ -5973,7 +6826,11 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
         };
 
         const systemPrompt = `You are a creative narration writer for short-form video content. Write engaging, authentic voiceover scripts that match the specified style. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice.`;
-        const userPrompt = `${stylePrompts[narrationStyle]}\n\nBased on this video transcript excerpt: ${transcriptExcerpt}`;
+        // v2: intensity + direction modifiers stack on top of the base style.
+        const intensityFragment = _styleIntensityPrompt(narrationStyle, narrationIntensity);
+        const directionFragment = _directionPrompt(narrationDirection);
+        const v2Mods = [intensityFragment, directionFragment].filter(Boolean).join(' ');
+        const userPrompt = `${stylePrompts[narrationStyle]}${v2Mods ? '\n\nADDITIONAL DIRECTION: ' + v2Mods : ''}\n\nBased on this video transcript excerpt: ${transcriptExcerpt}`;
 
         const narrationResponse = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
@@ -6040,12 +6897,16 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
               fs.writeFileSync(audioPath, buffer);
               console.log(`  ElevenLabs audio generated: ${audioPath} (${buffer.length} bytes)`);
             } else {
-              // OpenAI TTS (default)
-              let voiceName = 'nova';
-              if (narrationStyle === 'documentary' || narrationStyle === 'news') voiceName = 'onyx';
-              else if (narrationStyle === 'storytime' || narrationStyle === 'poetic') voiceName = 'shimmer';
-              else if (narrationStyle === 'dramatic') voiceName = 'echo';
-              else if (narrationStyle === 'hype') voiceName = 'fable';
+              // OpenAI TTS — prefer the explicitly-picked voice; fall
+              // back to the style-based map for v1 compatibility.
+              let voiceName = openaiVoiceId && OPENAI_VOICES.find(v => v.voice_id === openaiVoiceId) ? openaiVoiceId : null;
+              if (!voiceName) {
+                voiceName = 'nova';
+                if (narrationStyle === 'documentary' || narrationStyle === 'news') voiceName = 'onyx';
+                else if (narrationStyle === 'storytime' || narrationStyle === 'poetic') voiceName = 'shimmer';
+                else if (narrationStyle === 'dramatic') voiceName = 'echo';
+                else if (narrationStyle === 'hype') voiceName = 'fable';
+              }
 
               const speech = await openai.audio.speech.create({
                 model: 'tts-1',
@@ -6071,37 +6932,27 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
         if (voiceEnabled && audioPath) {
           // Add audio to video (mix or replace)
         try {
-          if (audioMix === 'replace') {
-            // Replace: discard original audio, use only narration
-            // Stream-copy video, transcode only audio. The clip is
-            // already H.264 yuv420p from /shorts/clip so a re-encode
-            // is pure waste on Railway CPU.
-            await runCommand(ffmpegPath, [
-              '-i', clipPath, '-i', audioPath,
-              '-map', '0:v', '-map', '1:a',
-              '-c:v', 'copy',
-              '-c:a', 'aac', '-b:a', '128k',
-              '-movflags', '+faststart',
-              '-shortest', '-y', tempOutput
-            ], { timeout: 120000 });
-          } else {
-            // Mix: blend original audio (30%) with narration
-            // Stream-copy video; filter_complex only touches audio.
-            // Explicit -map for both streams is required when mixing
-            // -c:v copy with -filter_complex — ffmpeg's auto-mapping
-            // sometimes drops one of them and produces a 'no audio' or
-            // 'no output streams selected' failure. Naming the amix
-            // output [aout] and mapping 0:v + [aout] is unambiguous.
-            await runCommand(ffmpegPath, [
-              '-i', clipPath, '-i', audioPath,
-              '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1[narr];[orig][narr]amix=inputs=2:duration=longest[aout]',
-              '-map', '0:v', '-map', '[aout]',
-              '-c:v', 'copy',
-              '-c:a', 'aac', '-b:a', '128k',
-              '-movflags', '+faststart',
-              '-shortest', '-y', tempOutput
-            ], { timeout: 120000 });
-          }
+          // v2 audio mix — combine narration + original at user-set
+          // levels, then loudness-normalize to the user's target.
+          // ORIG_LVL=0 collapses to a 'replace' (only narration);
+          // ORIG_LVL>0 mixes the two streams. A final loudnorm pass
+          // hits the broadcast/streaming/loud target so every clip
+          // exports at consistent volume regardless of TTS provider.
+          const _narr = NARR_LVL.toFixed(2);
+          const _orig = ORIG_LVL.toFixed(2);
+          const filterChain = ORIG_LVL <= 0.001
+            ? `[1:a]volume=${_narr},loudnorm=I=${LOUD_TGT}:TP=-1.5:LRA=11[aout]`
+            : `[0:a]volume=${_orig}[orig];[1:a]volume=${_narr}[narr];[orig][narr]amix=inputs=2:duration=longest,loudnorm=I=${LOUD_TGT}:TP=-1.5:LRA=11[aout]`;
+          console.log('[narrate] mix filter:', filterChain);
+          await runCommand(ffmpegPath, [
+            '-i', clipPath, '-i', audioPath,
+            '-filter_complex', filterChain,
+            '-map', '0:v', '-map', '[aout]',
+            '-c:v', 'copy',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart',
+            '-shortest', '-y', tempOutput
+          ], { timeout: 120000 });
           } catch (ffErr) {
             clearTimeout(timeout);
             writeError(`ffmpeg audio processing failed: ${ffErr.message}`);
@@ -6631,10 +7482,23 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
     const endSec = rangeParts[1] ? parseTime(rangeParts[1]) : startSec + 60;
     const duration = Math.max(endSec - startSec, 5);
 
-    const videoId = extractVideoId(analysis.video_url);
-    if (!videoId) return res.status(400).json({ error: 'Invalid video URL' });
-
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    // Source can be a YouTube URL OR an uploaded file (upload://<id>).
+    // Uploads skip the download chain entirely and use the resolver to
+    // get a local path (rehydrating from R2 if /tmp's copy is gone).
+    const isUploadSource = (analysis.video_url || '').startsWith('upload://');
+    let videoId, videoUrl, brollUploadedPath = null;
+    if (isUploadSource) {
+      brollUploadedPath = await resolveUploadedSourcePath(analysisId);
+      if (!brollUploadedPath) {
+        return res.status(404).json({ error: 'Uploaded source file is missing on the server. The server may have restarted — please re-upload the video.' });
+      }
+      videoId = 'upload-' + analysisId;
+      videoUrl = analysis.video_url;
+    } else {
+      videoId = extractVideoId(analysis.video_url);
+      if (!videoId) return res.status(400).json({ error: 'Invalid video URL' });
+      videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    }
     const safeTitle = (moment.title || 'clip').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
     const filename = `${safeTitle}_broll_${Date.now()}.mp4`;
     const outputPath = path.join(CLIPS_DIR, filename);
@@ -6681,11 +7545,25 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
       const tempFiles = [];
 
       try {
-        // STEP 1: Download main video
-        writeProgress('Downloading main video...');
+        // STEP 1: Download main video (or use uploaded source).
         const tempDownload = outputPath + '.temp.mkv';
         tempFiles.push(tempDownload);
 
+        if (isUploadSource) {
+          writeProgress('Using uploaded source video...');
+          try {
+            // Hard-link if possible (cheap), copy as a fallback. The
+            // segment-extract step opens this read-only so either is fine.
+            try { fs.linkSync(brollUploadedPath, tempDownload); }
+            catch (linkErr) { fs.copyFileSync(brollUploadedPath, tempDownload); }
+          } catch (copyErr) {
+            console.log('  B-Roll: failed to stage uploaded source:', copyErr.message);
+            clearTimeout(timeout);
+            writeError('Could not read uploaded source — try re-uploading.');
+            return;
+          }
+        } else {
+        writeProgress('Downloading main video...');
         try {
           await runCommand('yt-dlp', [
             '--no-playlist', '-f', 'bestvideo[height<=1920]+bestaudio/best[height<=1920]/best',
@@ -6724,6 +7602,7 @@ router.post('/clip-with-broll', requireAuth, requireFeature('clipWithBroll'), as
           }
         }
 
+        } // end YouTube-download branch
         // Find actual downloaded file
         let actualDownload = tempDownload;
         if (!fs.existsSync(tempDownload)) {
@@ -8148,6 +9027,40 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div style="font-size:12px;color:#888;" id="uploadStatusDetail">Sending file to server</div>
           </div>
         </div>
+        <!-- Cloud import row — Drive + Dropbox shareable-link import. -->
+        <div style="display:flex;align-items:center;gap:16px;margin:14px 0 10px;">
+          <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+          <span style="font-size:12px;color:#888;letter-spacing:0.08em;font-weight:600;">OR IMPORT FROM</span>
+          <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+          <button type="button" onclick="openCloudImport('googledrive')" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;background:var(--surface);border:1px solid var(--border-subtle);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='#4285f4';this.style.background='rgba(66,133,244,0.06)'" onmouseout="this.style.borderColor='var(--border-subtle)';this.style.background='var(--surface)'">
+            <img src="/images/section-icons/A-74.png" alt="" style="height:18px;width:18px;border-radius:4px"> Google Drive
+          </button>
+          <button type="button" onclick="openCloudImport('dropbox')" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;background:var(--surface);border:1px solid var(--border-subtle);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='#0061ff';this.style.background='rgba(0,97,255,0.06)'" onmouseout="this.style.borderColor='var(--border-subtle)';this.style.background='var(--surface)'">
+            <img src="/images/section-icons/A-75.png" alt="" style="height:18px;width:18px;border-radius:4px"> Dropbox
+          </button>
+        </div>
+      </div>
+
+      <!-- Cloud import modal — shared by Google Drive + Dropbox.
+           Asks the user to paste a publicly shareable link; server
+           downloads the file and runs the standard upload pipeline. -->
+      <div id="cloudImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+        <div style="background:var(--surface);border-radius:16px;padding:28px;max-width:520px;width:92%;position:relative;border:1px solid var(--border-subtle);">
+          <button onclick="closeCloudImport()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;">&times;</button>
+          <h3 id="cloudImportTitle" style="margin:0 0 6px;font-size:18px;font-weight:700;color:var(--text);">Import from Google Drive</h3>
+          <p id="cloudImportHint" style="margin:0 0 16px;font-size:13px;color:var(--text-muted);line-height:1.5;">Paste a publicly shareable Google Drive link. In Drive, right-click the file → Share → Anyone with the link → Copy link.</p>
+          <input id="cloudImportUrl" type="url" placeholder="https://drive.google.com/file/d/.../view?usp=sharing" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--surface-light);color:var(--text);font-size:13px;margin-bottom:14px;outline:none;" onkeydown="if(event.key==='Enter')submitCloudImport()">
+          <div id="cloudImportBusy" style="display:none;margin-bottom:12px;font-size:13px;color:var(--text);">
+            <span class="loading"></span> <span id="cloudImportStatusText">Downloading…</span>
+            <div id="cloudImportStatusDetail" style="font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button onclick="closeCloudImport()" style="padding:10px 16px;border-radius:10px;border:1px solid var(--border-subtle);background:transparent;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>
+            <button id="cloudImportSubmit" onclick="submitCloudImport()" style="padding:10px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Import &amp; Analyze</button>
+          </div>
+        </div>
       </div>
 
       <!-- Premium Tools Grid -->
@@ -8891,62 +9804,141 @@ ${paginationHtml}
   </div>
 
   <!-- Narration Modal -->
-  <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
-    <div style="background:var(--surface);border-radius:16px;padding:28px;max-width:520px;width:90%;margin:auto;position:relative;max-height:90vh;overflow-y:auto;">
-      <button onclick="closeNarrationModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;">&times;</button>
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Narration</h2>
-      <p style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">Add a voiceover or text narration to your clip</p>
+  <style>
+    /* === AI Narration modal — premium polish =============================
+       Scoped to #narrationModal so we don't leak styles into the rest
+       of the app. Mirrors the Splicora brand: purple-pink gradient
+       accents, soft glows, refined typography. */
+    #narrationModal .narr-card{background:linear-gradient(180deg,rgba(108,58,237,0.04),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 16px;margin-bottom:14px;transition:border-color .25s ease, box-shadow .25s ease;}
+    #narrationModal .narr-card:hover{border-color:rgba(167,139,250,0.18);box-shadow:0 4px 16px rgba(108,58,237,0.08);}
+    #narrationModal .narr-section-label{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#cbb6ff;margin-bottom:10px;}
+    #narrationModal .narr-section-label .lbl-dot{width:5px;height:5px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#ec4899);box-shadow:0 0 8px rgba(167,139,250,0.65);}
+    #narrationModal .narr-section-label .lbl-hint{margin-left:auto;font-size:10px;font-weight:500;letter-spacing:0.04em;text-transform:none;color:var(--text-dim);}
+    #narrationModal .narr-style-btn{position:relative;overflow:hidden;}
+    #narrationModal .narr-style-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(108,58,237,0.12);}
+    #narrationModal .voice-type-btn:hover, #narrationModal .provider-btn:hover, #narrationModal .narr-intensity-btn:hover{filter:brightness(1.08);}
+    /* Slider thumbs — custom-styled across browsers. */
+    #narrationModal input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:24px;cursor:pointer;}
+    #narrationModal input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:6px;background:linear-gradient(90deg,#6c5ce7 0%,#ec4899 100%);box-shadow:inset 0 1px 2px rgba(0,0,0,0.30);}
+    #narrationModal input[type=range]::-moz-range-track{height:6px;border-radius:6px;background:linear-gradient(90deg,#6c5ce7 0%,#ec4899 100%);}
+    #narrationModal input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid #a78bfa;margin-top:-6px;box-shadow:0 0 8px rgba(167,139,250,0.55);transition:transform .15s ease;}
+    #narrationModal input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.10);}
+    #narrationModal input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid #a78bfa;box-shadow:0 0 8px rgba(167,139,250,0.55);}
+    /* Voice picker card hover. */
+    #narrationModal #voice-picker-grid > div{transition:transform .15s ease, box-shadow .25s ease, border-color .15s ease;}
+    #narrationModal #voice-picker-grid > div:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(108,58,237,0.10);border-color:rgba(167,139,250,0.35);}
+    #narrationModal .voice-sample-btn:hover{background:rgba(108,58,237,0.10) !important;border-color:rgba(167,139,250,0.45) !important;color:#fff !important;}
+    /* Direction select polish. */
+    #narrationModal #narration-direction-select{background-image:linear-gradient(45deg,transparent 50%,#a78bfa 50%),linear-gradient(135deg,#a78bfa 50%,transparent 50%);background-position:calc(100% - 18px) center,calc(100% - 12px) center;background-size:6px 6px,6px 6px;background-repeat:no-repeat;appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;}
+    #narrationModal #narration-direction-select:focus{outline:none;border-color:#a78bfa !important;box-shadow:0 0 0 3px rgba(167,139,250,0.20);}
+    /* Generate button — premium gradient + soft glow. */
+    #narrationModal #narrate-generate-btn{position:relative;overflow:hidden;letter-spacing:0.02em;}
+    #narrationModal #narrate-generate-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,0.18) 50%,transparent 70%);transform:translateX(-100%);transition:transform .65s ease;}
+    #narrationModal #narrate-generate-btn:hover::before{transform:translateX(100%);}
+    #narrationModal #narrate-generate-btn:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(0,184,148,0.30), 0 0 0 1px rgba(0,206,201,0.40);}
+    #narrationModal #narrate-generate-btn:active{transform:translateY(0);}
+    #narrationModal #narrate-generate-btn:disabled{opacity:0.65;cursor:not-allowed;transform:none;box-shadow:none;}
+    /* Modal panel: refined surface + subtle backdrop gradient. */
+    #narrationModal .narr-panel{background:linear-gradient(180deg,var(--surface) 0%,rgba(28,18,52,0.96) 100%);border:1px solid rgba(108,58,237,0.18);box-shadow:0 24px 60px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.02);}
+    #narrationModal .narr-hero{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+    #narrationModal .narr-hero-icon{width:38px;height:38px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#6c5ce7 0%,#ec4899 100%);box-shadow:0 6px 18px rgba(108,58,237,0.35);flex-shrink:0;}
+    #narrationModal .narr-hero-icon img{height:20px;width:20px;}
+    #narrationModal .narr-hero-title{font-size:22px;font-weight:800;line-height:1.1;background:linear-gradient(135deg,#fff 0%,#cbb6ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;letter-spacing:-0.01em;}
+    #narrationModal .narr-hero-sub{font-size:12px;color:var(--text-dim);margin:6px 0 18px;}
+    /* Close button polish. */
+    #narrationModal .narr-close{position:absolute;top:14px;right:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:var(--text-muted);width:32px;height:32px;border-radius:50%;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s ease;z-index:2;}
+    #narrationModal .narr-close:hover{background:rgba(239,68,68,0.10);border-color:rgba(239,68,68,0.30);color:#fca5a5;transform:rotate(90deg);}
+  </style>
+  <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(8,4,18,0.78);z-index:9999;align-items:flex-start;justify-content:center;backdrop-filter:blur(8px);overflow-y:auto;padding:24px 12px;">
+    <div class="narr-panel" style="border-radius:18px;padding:26px;max-width:720px;width:100%;margin:auto;position:relative;">
+      <button class="narr-close" onclick="closeNarrationModal()" aria-label="Close">&times;</button>
+      <div class="narr-hero">
+        <span class="narr-hero-icon" aria-hidden="true"><img src="/images/section-icons/A-78.png" alt=""></span>
+        <h2 class="narr-hero-title">AI Narration</h2>
+      </div>
+      <p class="narr-hero-sub">Add a studio-quality voiceover to your clip. Pick a style, voice, and direction — we'll handle the rest.</p>
 
-      <div style="margin-bottom:16px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Style</label>
+      <!-- Style picker -->
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Narration style</div>
         <div id="narration-styles" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-          <button class="narr-style-btn" data-style="funny" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😂<br>Funny</button>
-          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Documentary</button>
-          <button class="narr-style-btn" data-style="dramatic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Dramatic</button>
-          <button class="narr-style-btn" data-style="hype" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🔥<br>Hype</button>
-          <button class="narr-style-btn" data-style="sarcastic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😏<br>Sarcastic</button>
-          <button class="narr-style-btn" data-style="storytime" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📖<br>Storytime</button>
-          <button class="narr-style-btn" data-style="news" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📺<br>News</button>
-          <button class="narr-style-btn" data-style="poetic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Poetic</button>
+          <button class="narr-style-btn" data-style="funny"       style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F602}<br>Funny</button>
+          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F3AC}<br>Documentary</button>
+          <button class="narr-style-btn" data-style="dramatic"    style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F3AD}<br>Dramatic</button>
+          <button class="narr-style-btn" data-style="hype"        style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F525}<br>Hype</button>
+          <button class="narr-style-btn" data-style="sarcastic"   style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F60F}<br>Sarcastic</button>
+          <button class="narr-style-btn" data-style="storytime"   style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F4D6}<br>Storytime</button>
+          <button class="narr-style-btn" data-style="news"        style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F4FA}<br>News</button>
+          <button class="narr-style-btn" data-style="poetic"      style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F4DD}<br>Poetic</button>
         </div>
       </div>
 
-      <div style="margin-bottom:16px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Type</label>
+      <!-- Intensity sub-picker — populated by JS based on selected style -->
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Intensity <span class="lbl-hint">Dial in the delivery</span></div>
+        <div id="narration-intensities" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- Narration Direction preset -->
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Narration direction <span class="lbl-hint">Shapes the narrative arc</span></div>
+        <select id="narration-direction-select" style="width:100%;padding:11px 14px;background:rgba(255,255,255,0.03);color:var(--text);border:1px solid rgba(255,255,255,0.10);border-radius:10px;font-size:13px;font-weight:500;">
+          <!-- populated by JS -->
+        </select>
+      </div>
+
+      <!-- Voice Type: AI Voice / Text Only -->
+      <div class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Voice type</div>
         <div style="display:flex;gap:8px;">
-          <button id="voice-type-ai" class="voice-type-btn active" onclick="setVoiceType('ai')" style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
-          <button id="voice-type-text" class="voice-type-btn" onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Only</button>
+          <button id="voice-type-ai"   class="voice-type-btn active" onclick="setVoiceType('ai')"   style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
+          <button id="voice-type-text" class="voice-type-btn"        onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Only</button>
         </div>
       </div>
 
-      <div id="voice-options" style="margin-bottom:16px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Provider</label>
+      <!-- Voice picker — provider tabs + per-voice cards with Play 5s -->
+      <div id="voice-options" class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Voice <span class="lbl-hint">Click any card to pick. Tap Play 5s to preview.</span></div>
         <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <button id="provider-openai" class="provider-btn active" onclick="setProvider('openai')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #6c5ce7;background:rgba(108,92,231,0.1);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">OpenAI TTS</button>
-          <button id="provider-elevenlabs" class="provider-btn" onclick="setProvider('elevenlabs')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">ElevenLabs</button>
+          <button id="provider-openai"     class="provider-btn active" onclick="setProvider('openai')"     style="flex:1;padding:8px;border-radius:8px;border:2px solid #6c5ce7;background:rgba(108,92,231,0.1);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">OpenAI TTS</button>
+          <button id="provider-elevenlabs" class="provider-btn"         onclick="setProvider('elevenlabs')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">ElevenLabs</button>
         </div>
-        <div id="elevenlabs-voice-picker" style="display:none;">
-          <select id="elevenlabs-voice-select" style="width:100%;padding:8px 10px;background:var(--surface-light);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:12px;">
-            <option value="">Loading voices...</option>
-          </select>
-          <p style="font-size:10px;color:var(--text-dim);margin-top:4px;">Add your ElevenLabs API key in Settings to use custom voices</p>
+        <div id="voice-picker-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:260px;overflow-y:auto;padding-right:4px;">
+          <!-- populated by JS — each entry is a card with name + description + Play 5s button -->
         </div>
+        <p id="elevenlabs-empty" style="display:none;font-size:10px;color:var(--text-dim);margin-top:6px;">No ElevenLabs voices available. Add your API key in Settings.</p>
       </div>
 
-      <div id="audio-mix-options" style="margin-bottom:20px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Audio Mix</label>
-        <div style="display:flex;gap:8px;">
-          <button id="mix-type-mix" class="mix-type-btn active" onclick="setMixType('mix')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:11px;cursor:pointer;"><img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Mix (30% original)</button>
-          <button id="mix-type-replace" class="mix-type-btn" onclick="setMixType('replace')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;">🔇 Replace Audio</button>
+      <!-- Pro audio mix: narration level, original level -->
+      <div id="audio-mix-options" class="narr-card">
+        <div class="narr-section-label"><span class="lbl-dot" aria-hidden="true"></span> Pro audio mix <span class="lbl-hint">Balance the levels</span></div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:12px;color:var(--text);font-weight:600;">Narration level</span>
+              <span id="narration-level-readout" style="font-size:11px;color:var(--text-muted);font-weight:600;">100%</span>
+            </div>
+            <input id="narration-level-slider" type="range" min="0" max="100" value="100" style="width:100%;accent-color:#00b894;">
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:12px;color:var(--text);font-weight:600;">Original audio level</span>
+              <span id="original-level-readout" style="font-size:11px;color:var(--text-muted);font-weight:600;">30%</span>
+            </div>
+            <input id="original-level-slider" type="range" min="0" max="100" value="30" style="width:100%;accent-color:#6c5ce7;">
+          </div>
         </div>
       </div>
 
       <!-- Don't-close warning: the progress ticker + polling loops are
            tied to the modal lifetime — closing the modal cancels the
-           generation. Surface this loudly in an amber chip so users
-           don't lose 30-60s of work by reflexively dismissing the
-           modal mid-flow. -->
-      <div style="display:flex;align-items:flex-start;gap:8px;background:rgba(243,156,18,0.10);border:1px solid rgba(243,156,18,0.40);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.5;color:#fde6b8;font-weight:500;">
+           generation. Hidden by default; shown only after the user
+           clicks Generate (i.e. when there's actually work in flight
+           that closing would cancel). No point alarming users while
+           they're still picking style + voice. -->
+      <div id="narration-keep-open-warning" style="display:none;align-items:flex-start;gap:8px;background:rgba(243,156,18,0.10);border:1px solid rgba(243,156,18,0.40);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.5;color:#fde6b8;font-weight:500;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <span><strong style="color:#ffd591;">Please keep this window open.</strong> Closing it will cancel the narration in progress and you'll have to start over.</span>
       </div>
@@ -9094,6 +10086,107 @@ ${paginationHtml}
         if (inp) inp.value = '';
       }
     }
+
+    // ── Cloud import (Google Drive + Dropbox) ────────────────────────
+    // Opens the cloud import modal pre-configured for the requested
+    // source. The actual download happens server-side in
+    // POST /shorts/analyze-cloud-url — same SSE protocol as
+    // /analyze-upload, so we can reuse the same stream-reader.
+    function openCloudImport(source) {
+      var modal = document.getElementById('cloudImportModal');
+      var title = document.getElementById('cloudImportTitle');
+      var hint = document.getElementById('cloudImportHint');
+      var input = document.getElementById('cloudImportUrl');
+      var busy = document.getElementById('cloudImportBusy');
+      var submit = document.getElementById('cloudImportSubmit');
+      if (!modal) return;
+      if (source === 'dropbox') {
+        if (title) title.textContent = 'Import from Dropbox';
+        if (hint) hint.textContent = 'Paste a publicly shareable Dropbox link. In Dropbox, click Share on the file → Copy link.';
+        if (input) input.placeholder = 'https://www.dropbox.com/s/.../filename.mp4?dl=0';
+      } else {
+        if (title) title.textContent = 'Import from Google Drive';
+        if (hint) hint.textContent = 'Paste a publicly shareable Google Drive link. In Drive, right-click the file → Share → Anyone with the link → Copy link.';
+        if (input) input.placeholder = 'https://drive.google.com/file/d/.../view?usp=sharing';
+      }
+      if (input) input.value = '';
+      if (busy) busy.style.display = 'none';
+      if (submit) { submit.disabled = false; submit.textContent = 'Import & Analyze'; }
+      modal.style.display = 'flex';
+      if (input) setTimeout(function() { input.focus(); }, 50);
+    }
+    function closeCloudImport() {
+      var modal = document.getElementById('cloudImportModal');
+      if (modal) modal.style.display = 'none';
+    }
+    async function submitCloudImport() {
+      var input = document.getElementById('cloudImportUrl');
+      var busy = document.getElementById('cloudImportBusy');
+      var statusText = document.getElementById('cloudImportStatusText');
+      var statusDetail = document.getElementById('cloudImportStatusDetail');
+      var submit = document.getElementById('cloudImportSubmit');
+      var url = (input && input.value || '').trim();
+      if (!url) { showToast('Paste a shareable Drive or Dropbox link first.'); return; }
+      if (busy) busy.style.display = 'block';
+      if (submit) { submit.disabled = true; submit.textContent = 'Importing…'; }
+      if (statusText) statusText.textContent = 'Downloading from cloud…';
+      if (statusDetail) statusDetail.textContent = '';
+      try {
+        var response = await fetch('/shorts/analyze-cloud-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        var contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          var data = await response.json();
+          throw new Error(data.error || 'Import failed');
+        }
+        if (!response.ok) throw new Error('Import failed. Please try again.');
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var sseBuffer = '';
+        var lastStatus = null;
+        while (true) {
+          var read = await reader.read();
+          if (read.done) break;
+          sseBuffer += decoder.decode(read.value, { stream: true });
+          var lines = sseBuffer.split('\\n\\n');
+          sseBuffer = lines.pop() || '';
+          for (var i = 0; i < lines.length; i++) {
+            var ln = lines[i].trim();
+            if (!ln.startsWith('data: ')) continue;
+            var evt;
+            try { evt = JSON.parse(ln.slice(6)); } catch (e) { continue; }
+            lastStatus = evt;
+            if (statusText) {
+              if (evt.status === 'fetching') statusText.textContent = 'Downloading from cloud…';
+              else if (evt.status === 'extracting_audio') statusText.textContent = 'Extracting audio…';
+              else if (evt.status === 'transcribing') statusText.textContent = 'Transcribing…';
+              else if (evt.status === 'analyzing') statusText.textContent = 'Analyzing viral moments…';
+              else if (evt.status === 'completed') statusText.textContent = 'Done!';
+              else if (evt.status === 'error') statusText.textContent = 'Error';
+            }
+            if (statusDetail && evt.message) statusDetail.textContent = evt.message;
+          }
+        }
+        if (lastStatus && lastStatus.status === 'completed') {
+          showToast('Analysis complete! Loading…');
+          setTimeout(function() { location.reload(); }, 1000);
+        } else if (lastStatus && lastStatus.status === 'error') {
+          throw new Error(lastStatus.message || 'Cloud import failed');
+        }
+      } catch (err) {
+        if (busy) busy.style.display = 'none';
+        if (submit) { submit.disabled = false; submit.textContent = 'Import & Analyze'; }
+        showToast('Cloud import error: ' + (err.message || err));
+      }
+    }
+    // Expose for inline onclick handlers (the script runs in an IIFE-ish
+    // top-level context inside the rendered page).
+    window.openCloudImport = openCloudImport;
+    window.closeCloudImport = closeCloudImport;
+    window.submitCloudImport = submitCloudImport;
 
     // ── Analyze placeholder card ─────────────────────────────────────
     // After the user accepts the disclaimer, we drop a non-interactive
@@ -9264,7 +10357,15 @@ ${paginationHtml}
               'style="position:absolute; top:10px; right:10px; background:rgba(239,68,68,0.9); border:2px solid rgba(255,255,255,0.3); color:#fff; width:30px; height:30px; border-radius:50%; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; z-index:10; transition:all 0.2s; font-weight:bold;" ' +
               'onmouseover="this.style.background=\\'#ef4444\\'; this.style.transform=\\'scale(1.15)\\'" ' +
               'onmouseout="this.style.background=\\'rgba(239,68,68,0.9)\\'; this.style.transform=\\'scale(1)\\'">&times;</button>' +
-            (thumbSrc ? '<img src="' + thumbSrc + '" alt="Video thumbnail" style="width:100%;border-radius:8px;margin-bottom:12px;aspect-ratio:16/9;object-fit:cover;background:#000;" onerror="this.style.display=\\'none\\'">' : '') +
+            (thumbSrc ?
+              '<div style="position:relative;width:100%;aspect-ratio:16/9;border-radius:8px;margin-bottom:12px;overflow:hidden;background:linear-gradient(135deg,#2a1f4a 0%,#1a1430 60%,#0a0612 100%);">' +
+                '<img src="' + thumbSrc + '" alt="Video thumbnail" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.onerror=null;this.style.display=\\'none\\';var ovl=this.parentElement.querySelector(\\'.card-thumb-fallback\\');if(ovl)ovl.style.display=\\'flex\\';">' +
+                '<div class="card-thumb-fallback" style="display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;padding:16px;text-align:center;color:#e9d8ff;">' +
+                  '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-bottom:8px;opacity:0.85;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>' +
+                  '<div style="font-size:13px;font-weight:700;line-height:1.3;max-width:90%;">' + _escHtmlAP((data.video_title || 'Audio upload').substring(0, 60)) + '</div>' +
+                '</div>' +
+              '</div>'
+            : '') +
             '<div class="card-header">' +
               '<div class="card-title">' + _escHtmlAP(data.video_title || 'YouTube Video') + '</div>' +
               '<div class="card-meta">' + _escHtmlAP(dateStr) + '</div>' +
@@ -13116,11 +14217,50 @@ ${paginationHtml}
       analysisId: null,
       momentIndex: null,
       style: 'funny',
+      intensity: 'classic',
+      direction: 'auto',
       voiceEnabled: true,
       provider: 'openai',
+      openaiVoiceId: 'nova',
       elevenlabsVoiceId: null,
       audioMix: 'mix',
-      clipFilename: null
+      narrationLevel: 1.0,    // 0..1
+      originalLevel: 0.3,     // 0..1
+      loudnessTarget: '-14',  // -16 broadcast / -14 streaming / -10 loud
+      clipFilename: null,
+      // v2 catalog cache (loaded on first modal open).
+      catalog: null,
+      // Per-sample audio cache so repeat plays don't re-fetch.
+      sampleAudio: {},
+      sampleAudioInflight: {}
+    };
+    // Default intensity per style (the middle option).
+    var NARRATION_STYLE_DEFAULTS = {
+      funny:       'classic',
+      documentary: 'authoritative',
+      dramatic:    'intense',
+      hype:        'peak_hype',
+      sarcastic:   'biting',
+      storytime:   'conversational',
+      news:        'neutral',
+      poetic:      'lyrical'
+    };
+    // Style-specific words-per-second baselines for duration estimation.
+    // Pulled from typical TTS pacing — calm styles speak slower.
+    var NARRATION_WPS = {
+      funny: 3.0, documentary: 2.4, dramatic: 2.2, hype: 3.4,
+      sarcastic: 2.6, storytime: 2.4, news: 3.0, poetic: 2.0
+    };
+    // Intensity tweaks the WPS by a small factor.
+    var NARRATION_INTENSITY_FACTOR = {
+      lightly_playful: 0.92, classic: 1.0,    bold: 1.10,
+      observational: 0.95,  authoritative: 1.0, dramatic_nonfic: 0.92,
+      restrained: 0.90,     intense: 1.05,  theatrical: 1.0,
+      steady_energy: 1.05,  peak_hype: 1.15, max_intensity: 1.25,
+      dry: 0.95,            biting: 1.0,    deadpan: 0.90,
+      conversational: 1.0,  intimate: 0.90, theatrical_narrator: 0.95,
+      neutral: 1.0,         breaking: 1.10, somber: 0.85,
+      whispered: 0.85,      lyrical: 0.95,  declamatory: 1.0
     };
 
     // ── Narration progress ticker ────────────────────────────────────
@@ -13250,6 +14390,70 @@ ${paginationHtml}
       p.style.display = 'none';
       p.innerHTML = '';
     }
+    // Render the post-render success state with Download + Publish
+    // buttons. Same UX as the Download Clip flow on viral moments —
+    // user picks what to do next instead of an automatic download.
+    function _showNarrationDoneActions(filename) {
+      var p = document.getElementById('narration-progress');
+      if (!p) return;
+      p.style.display = 'block';
+      // Don't blow away the progress bar — append the actions below it
+      // so the bar's 100% / Done state is still visible.
+      // Pull moment title/caption from the same client-side state the
+      // Publish modal already uses, so the user sees the moment's
+      // generated title preloaded.
+      var analysis = window.__currentAnalysis || window.currentAnalysis || window.lastAnalysisData;
+      var moment = null;
+      if (analysis && Array.isArray(analysis.moments)) {
+        moment = analysis.moments[narrationState.momentIndex];
+      }
+      var defaultTitle = (moment && moment.title) || ('Narrated moment ' + ((narrationState.momentIndex || 0) + 1));
+      var defaultCaption = (moment && (moment.description || moment.reason)) || '';
+
+      var panel = document.createElement('div');
+      panel.id = 'narration-done-actions';
+      panel.style.cssText = 'margin-top:14px;background:rgba(0,184,148,0.06);border:1px solid rgba(0,184,148,0.30);border-radius:10px;padding:14px;text-align:left;';
+      panel.innerHTML =
+        '<div style="font-size:13px;font-weight:700;color:#34d399;margin-bottom:4px;">\u2705 Your narrated video is ready</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Download it, or publish it directly to a connected account.</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<button id="narration-done-download" style="flex:1;min-width:140px;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.10);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">\u2B07 Download Video</button>' +
+          '<button id="narration-done-publish" style="flex:1;min-width:140px;padding:10px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#00b894 0%,#00cec9 100%);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">\u{1F4E4} Publish to account</button>' +
+        '</div>';
+      // Clean up any prior panel from a previous run before appending.
+      var prior = document.getElementById('narration-done-actions');
+      if (prior) prior.remove();
+      p.appendChild(panel);
+
+      document.getElementById('narration-done-download').addEventListener('click', function() {
+        var link = document.createElement('a');
+        link.href = '/shorts/narrate/download/' + filename;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Narrated clip downloaded!');
+      });
+      document.getElementById('narration-done-publish').addEventListener('click', function() {
+        // Open the same Publish modal used by viral-moment Download +
+        // /shorts/clips. The customMediaFilename override tells the
+        // backend to publish THIS narrated mp4 instead of resolving
+        // the raw clip via resolveClipPath.
+        if (typeof openPublishModal !== 'function') {
+          showToast('Publish modal not available on this page.');
+          return;
+        }
+        // Close the narration modal first so the publish modal isn't
+        // hidden behind it. The narrated file remains on the server
+        // for at least 15 min thanks to the deferred-unlink logic.
+        closeNarrationModal();
+        openPublishModal(narrationState.analysisId, narrationState.momentIndex, {
+          title: defaultTitle,
+          caption: defaultCaption,
+          customMediaFilename: filename
+        });
+      });
+    }
     // Map a progress message (from the server or our own UX strings) to
     // an approximate { pct, etaSec } pair. Estimates are rough averages;
     // the bar tightens as the user advances through stages.
@@ -13291,16 +14495,29 @@ ${paginationHtml}
       });
       // Reset progress UI styling carried over from a previous attempt.
       _resetNarrationProgress();
-      // Pre-fire the clip render in the background. The user typically
-      // spends 5-15s picking style + mix + voice before clicking
-      // Generate — we want that time to overlap with the slowest
-      // step (clip render + source download). If clipFilename is
-      // already set, this is a no-op.
-      if (!narrationState.clipFilename) {
-        narrationState.currentStage = 'Preparing clip in background…';
-        _startNarrationTicker();
-        _prerenderClipForNarration();
-      }
+      // Hide the don't-close warning — no work in progress yet.
+      var _warnReset = document.getElementById('narration-keep-open-warning');
+      if (_warnReset) _warnReset.style.display = 'none';
+      // v2 init: load catalog (cached after first call), build the
+      // intensity row + direction select + voice picker, wire sliders,
+      // and refresh the live preview.
+      loadVoiceCatalog().then(function() {
+        rebuildIntensityRow();
+        rebuildDirectionSelect();
+        rebuildVoicePicker();
+        _wireMixSliders();
+        // Make sure default loudness button visual matches state.
+        setLoudness(narrationState.loudnessTarget);
+        updateNarrationPreview();
+      });
+      // IMPORTANT: do NOT kick off the clip prerender here. /shorts/clip
+      // is gated by checkPlanLimit('clipsPerMonth'), so firing it the
+      // moment the modal opens would consume one of the user's monthly
+      // clip credits even if they close the modal without generating.
+      // Per Albert's spec — all work + credit consumption must wait
+      // until the user explicitly clicks 'Generate Narration'. The
+      // legacy clip-gen path inside generateNarration() handles the
+      // rendering when the button is clicked.
     }
 
     // Kicks off /shorts/clip in the background so the narration flow
@@ -13370,14 +14587,21 @@ ${paginationHtml}
     function closeNarrationModal() {
       _stopNarrationTicker();
       document.getElementById('narrationModal').style.display = 'none';
+      var _warnClose = document.getElementById('narration-keep-open-warning');
+      if (_warnClose) _warnClose.style.display = 'none';
     }
 
-    // Style selection
+    // Style selection — also resets intensity to that style's
+    // default and rebuilds the intensity row + preview summary.
     document.querySelectorAll('.narr-style-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         narrationState.style = this.dataset.style;
+        narrationState.intensity = NARRATION_STYLE_DEFAULTS[narrationState.style] || 'classic';
         document.querySelectorAll('.narr-style-btn').forEach(function(b) { b.style.borderColor = 'transparent'; });
         this.style.borderColor = '#00b894';
+        rebuildIntensityRow();
+        rebuildVoicePicker();
+        updateNarrationPreview();
       });
     });
 
@@ -13391,72 +14615,307 @@ ${paginationHtml}
       document.getElementById('audio-mix-options').style.display = type === 'ai' ? 'block' : 'none';
     }
 
+    // Bridge from the inline onclick='setProvider(...)' to the v2 handler.
     function setProvider(provider) {
+      if (typeof setProviderV2 === 'function') return setProviderV2(provider);
+      narrationState.provider = provider;
+    }
+
+    // setMixType replaced by sliders + setLoudness in v2; left as a
+    // no-op stub for any legacy onclick that might still call it.
+    function setMixType(_type) { /* deprecated */ }
+
+    // ── v2 catalog + controllers ───────────────────────────────────
+    async function loadVoiceCatalog() {
+      if (narrationState.catalog) return narrationState.catalog;
+      try {
+        var resp = await fetch('/shorts/voice-catalog');
+        var data = await resp.json();
+        narrationState.catalog = data;
+        return data;
+      } catch (err) {
+        console.warn('voice-catalog fetch failed:', err);
+        narrationState.catalog = { openai: [], elevenlabs: [], styles: {}, directions: {} };
+        return narrationState.catalog;
+      }
+    }
+
+    function rebuildIntensityRow() {
+      var row = document.getElementById('narration-intensities');
+      if (!row) return;
+      var styleMeta = (narrationState.catalog && narrationState.catalog.styles && narrationState.catalog.styles[narrationState.style])
+        || { intensities: [{ id: 'classic', label: 'Classic' }] };
+      row.innerHTML = '';
+      styleMeta.intensities.forEach(function(intensity) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'narr-intensity-btn';
+        btn.dataset.intensity = intensity.id;
+        btn.textContent = intensity.label;
+        var isActive = intensity.id === narrationState.intensity;
+        btn.style.cssText = 'flex:1;padding:8px 10px;border-radius:8px;border:2px solid ' + (isActive ? '#00b894' : 'transparent') + ';background:' + (isActive ? 'rgba(0,184,148,0.10)' : 'var(--surface-light)') + ';color:var(--text);font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;min-width:auto;';
+        btn.addEventListener('click', function() {
+          narrationState.intensity = intensity.id;
+          rebuildIntensityRow();
+          updateNarrationPreview();
+        });
+        row.appendChild(btn);
+      });
+    }
+
+    function rebuildDirectionSelect() {
+      var sel = document.getElementById('narration-direction-select');
+      if (!sel || !narrationState.catalog) return;
+      var dirs = narrationState.catalog.directions || {};
+      sel.innerHTML = '';
+      Object.keys(dirs).forEach(function(key) {
+        var opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = dirs[key].label;
+        if (key === narrationState.direction) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.onchange = function() {
+        narrationState.direction = this.value;
+        updateNarrationPreview();
+      };
+    }
+
+    function rebuildVoicePicker() {
+      var grid = document.getElementById('voice-picker-grid');
+      var emptyMsg = document.getElementById('elevenlabs-empty');
+      if (!grid || !narrationState.catalog) return;
+      var provider = narrationState.provider;
+      var list = provider === 'openai' ? (narrationState.catalog.openai || []) : (narrationState.catalog.elevenlabs || []);
+      grid.innerHTML = '';
+      if (emptyMsg) emptyMsg.style.display = (provider === 'elevenlabs' && list.length === 0) ? 'block' : 'none';
+      list.forEach(function(voice) {
+        var isActive = (provider === 'openai')
+          ? voice.voice_id === narrationState.openaiVoiceId
+          : voice.voice_id === narrationState.elevenlabsVoiceId;
+        var card = document.createElement('div');
+        card.style.cssText = 'background:' + (isActive ? 'rgba(108,92,231,0.10)' : 'var(--surface-light)') + ';border:2px solid ' + (isActive ? '#a78bfa' : 'transparent') + ';border-radius:10px;padding:10px;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;gap:6px;';
+        card.dataset.voiceId = voice.voice_id;
+        card.addEventListener('click', function(e) {
+          // Click anywhere on the card except the Play button selects.
+          if (e.target.closest('.voice-sample-btn')) return;
+          if (provider === 'openai') narrationState.openaiVoiceId = voice.voice_id;
+          else                       narrationState.elevenlabsVoiceId = voice.voice_id;
+          rebuildVoicePicker();
+          updateNarrationPreview();
+        });
+        var name = document.createElement('div');
+        name.style.cssText = 'font-size:13px;font-weight:700;color:var(--text);';
+        name.textContent = voice.name;
+        var desc = document.createElement('div');
+        desc.style.cssText = 'font-size:11px;color:var(--text-muted);line-height:1.35;';
+        desc.textContent = voice.description || '';
+        var sampleBtn = document.createElement('button');
+        sampleBtn.type = 'button';
+        sampleBtn.className = 'voice-sample-btn';
+        sampleBtn.dataset.voiceId = voice.voice_id;
+        sampleBtn.innerHTML = '\u25B6 Play 5s sample';
+        sampleBtn.style.cssText = 'margin-top:4px;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.10);background:var(--surface);color:#a78bfa;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;';
+        sampleBtn.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          playVoiceSample(provider, voice.voice_id, sampleBtn);
+        });
+        card.appendChild(name);
+        card.appendChild(desc);
+        card.appendChild(sampleBtn);
+        grid.appendChild(card);
+      });
+    }
+
+    var __narrationSampleAudio = null;
+    async function playVoiceSample(provider, voiceId, btn) {
+      // Stop any currently-playing sample so two clicks in a row
+      // don't double up.
+      if (__narrationSampleAudio) {
+        try { __narrationSampleAudio.pause(); } catch (_) {}
+        __narrationSampleAudio = null;
+      }
+      var key = provider + '/' + voiceId + '/' + narrationState.style + '/' + narrationState.intensity;
+      if (narrationState.sampleAudio[key]) {
+        var audio = new Audio(narrationState.sampleAudio[key]);
+        __narrationSampleAudio = audio;
+        try { audio.play(); } catch (_) {}
+        return;
+      }
+      if (narrationState.sampleAudioInflight[key]) return;
+      narrationState.sampleAudioInflight[key] = true;
+      var originalHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '\u25CF Loading...';
+      try {
+        var resp = await fetch('/shorts/narrate-sample', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: provider, voiceId: voiceId, style: narrationState.style, intensity: narrationState.intensity })
+        });
+        if (!resp.ok) {
+          var err = await resp.json().catch(function() { return { error: 'Sample failed' }; });
+          throw new Error(err.error || 'Sample failed');
+        }
+        var blob = await resp.blob();
+        var url = URL.createObjectURL(blob);
+        narrationState.sampleAudio[key] = url;
+        var audio2 = new Audio(url);
+        __narrationSampleAudio = audio2;
+        try { audio2.play(); } catch (_) {}
+      } catch (e) {
+        if (typeof showToast === 'function') showToast('Voice sample failed: ' + e.message);
+        console.warn('voice sample failed:', e);
+      } finally {
+        narrationState.sampleAudioInflight[key] = false;
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+      }
+    }
+
+    function setLoudness(target) {
+      narrationState.loudnessTarget = target;
+      document.querySelectorAll('.loudness-btn').forEach(function(b) {
+        var active = b.dataset.loud === target;
+        b.style.borderColor = active ? '#00b894' : 'transparent';
+        b.style.background = active ? 'rgba(0,184,148,0.10)' : 'var(--surface)';
+      });
+    }
+
+    function _wireMixSliders() {
+      var nLvl = document.getElementById('narration-level-slider');
+      var nOut = document.getElementById('narration-level-readout');
+      var oLvl = document.getElementById('original-level-slider');
+      var oOut = document.getElementById('original-level-readout');
+      if (nLvl) nLvl.addEventListener('input', function() {
+        narrationState.narrationLevel = Number(this.value) / 100;
+        if (nOut) nOut.textContent = this.value + '%';
+        updateNarrationPreview();
+      });
+      if (oLvl) oLvl.addEventListener('input', function() {
+        var v = Number(this.value);
+        narrationState.originalLevel = v / 100;
+        // Derive audioMix for backend compat.
+        narrationState.audioMix = v === 0 ? 'replace' : 'mix';
+        if (oOut) oOut.textContent = this.value + '%';
+        updateNarrationPreview();
+      });
+      document.querySelectorAll('.loudness-btn').forEach(function(b) {
+        b.addEventListener('click', function() { setLoudness(this.dataset.loud); updateNarrationPreview(); });
+      });
+    }
+
+    // Estimate narration duration from generated word-count target
+    // + WPS lookup. Surfaces a pacing warning when the narration
+    // would be longer than the available clip duration.
+    function updateNarrationPreview() {
+      var summary = document.getElementById('narration-preview-summary');
+      var dur = document.getElementById('narration-preview-duration');
+      var clipLen = document.getElementById('narration-preview-clip-len');
+      var warning = document.getElementById('narration-pacing-warning');
+      var warningText = document.getElementById('narration-pacing-warning-text');
+
+      // Clip duration from the active moment (start/end seconds).
+      var clipSec = 0;
+      try {
+        var analysis = window.__currentAnalysis || window.currentAnalysis || window.lastAnalysisData;
+        if (analysis && Array.isArray(analysis.moments)) {
+          var mom = analysis.moments[narrationState.momentIndex];
+          if (mom && mom.timeRange) {
+            var parts = String(mom.timeRange).split('-');
+            var parseT = function(s) {
+              var p = (s || '').trim().split(':').map(Number);
+              if (p.length === 3) return p[0]*3600 + p[1]*60 + p[2];
+              if (p.length === 2) return p[0]*60 + p[1];
+              return Number(p[0]) || 0;
+            };
+            clipSec = Math.max(0, parseT(parts[1]) - parseT(parts[0]));
+          }
+        }
+      } catch (_) {}
+
+      // Estimate narration length. GPT generates "max 4-5 sentences"
+      // for each style — assume ~12 words/sentence and 4.5 sentences
+      // typical = 54 words baseline, tuned by WPS + intensity factor.
+      var baseWords = 54;
+      var wps = NARRATION_WPS[narrationState.style] || 2.5;
+      var factor = NARRATION_INTENSITY_FACTOR[narrationState.intensity] || 1.0;
+      var estimatedSec = baseWords / (wps * factor);
+
+      // Provider + voice labels for the summary line.
+      var styleMeta = (narrationState.catalog && narrationState.catalog.styles && narrationState.catalog.styles[narrationState.style]) || { label: narrationState.style };
+      var intLabel = (styleMeta.intensities || []).find(function(x) { return x.id === narrationState.intensity; });
+      var providerLabel = narrationState.provider === 'openai' ? 'OpenAI' : 'ElevenLabs';
+      var voiceLabel = '';
+      if (narrationState.catalog) {
+        var list = narrationState.provider === 'openai' ? narrationState.catalog.openai : narrationState.catalog.elevenlabs;
+        var pickedId = narrationState.provider === 'openai' ? narrationState.openaiVoiceId : narrationState.elevenlabsVoiceId;
+        var picked = (list || []).find(function(v) { return v.voice_id === pickedId; });
+        if (picked) voiceLabel = picked.name;
+      }
+      var mixLabel = narrationState.originalLevel <= 0.01 ? 'Replace audio'
+                   : ('Mix · narr ' + Math.round(narrationState.narrationLevel * 100) + '% / orig ' + Math.round(narrationState.originalLevel * 100) + '%');
+      if (summary) {
+        summary.textContent = styleMeta.label + (intLabel ? (' — ' + intLabel.label) : '')
+          + ' · ' + providerLabel + (voiceLabel ? (' ' + voiceLabel) : '')
+          + ' · ' + mixLabel;
+      }
+      if (dur) dur.textContent = '~ ' + estimatedSec.toFixed(1) + ' sec narration';
+      if (clipLen) clipLen.textContent = clipSec ? ('Clip duration: ' + clipSec.toFixed(0) + ' sec') : 'Clip duration: —';
+
+      // Pacing warning bands.
+      if (warning && warningText) {
+        warning.style.display = 'none';
+        if (clipSec > 0) {
+          if (estimatedSec > clipSec * 1.20) {
+            warning.style.display = 'block';
+            warning.style.background = 'rgba(239,68,68,0.10)';
+            warning.style.borderColor = 'rgba(239,68,68,0.35)';
+            warning.style.color = '#fca5a5';
+            warningText.textContent = 'Narration is longer than the clip (' + estimatedSec.toFixed(1) + 's vs ' + clipSec.toFixed(0) + 's). Pacing will sound rushed or the clip will hold an empty tail.';
+          } else if (estimatedSec > clipSec * 0.95) {
+            warning.style.display = 'block';
+            warning.style.background = 'rgba(251,191,36,0.10)';
+            warning.style.borderColor = 'rgba(251,191,36,0.35)';
+            warning.style.color = '#fbbf24';
+            warningText.textContent = 'Pacing will be tight (' + estimatedSec.toFixed(1) + 's narration in ' + clipSec.toFixed(0) + 's clip). Consider a lower-intensity option.';
+          } else if (estimatedSec < clipSec * 0.40) {
+            warning.style.display = 'block';
+            warning.style.background = 'rgba(108,92,231,0.10)';
+            warning.style.borderColor = 'rgba(108,92,231,0.30)';
+            warning.style.color = '#a78bfa';
+            warningText.textContent = 'Narration is short relative to the clip. Original audio will fill the gaps.';
+          }
+        }
+      }
+    }
+
+    // setProvider was redefined above — keep this one as the canonical.
+    function setProviderV2(provider) {
       narrationState.provider = provider;
       document.getElementById('provider-openai').style.borderColor = provider === 'openai' ? '#6c5ce7' : 'transparent';
       document.getElementById('provider-openai').style.background = provider === 'openai' ? 'rgba(108,92,231,0.1)' : 'var(--surface-light)';
       document.getElementById('provider-elevenlabs').style.borderColor = provider === 'elevenlabs' ? '#6c5ce7' : 'transparent';
       document.getElementById('provider-elevenlabs').style.background = provider === 'elevenlabs' ? 'rgba(108,92,231,0.1)' : 'var(--surface-light)';
-      document.getElementById('elevenlabs-voice-picker').style.display = provider === 'elevenlabs' ? 'block' : 'none';
-      if (provider === 'elevenlabs') loadElevenLabsVoices();
+      rebuildVoicePicker();
+      updateNarrationPreview();
     }
-
-    function setMixType(type) {
-      narrationState.audioMix = type;
-      document.getElementById('mix-type-mix').style.borderColor = type === 'mix' ? '#00b894' : 'transparent';
-      document.getElementById('mix-type-mix').style.background = type === 'mix' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
-      document.getElementById('mix-type-replace').style.borderColor = type === 'replace' ? '#00b894' : 'transparent';
-      document.getElementById('mix-type-replace').style.background = type === 'replace' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
-    }
-
-    async function loadElevenLabsVoices() {
-      var select = document.getElementById('elevenlabs-voice-select');
-      select.innerHTML = '<option value="">Loading voices...</option>';
-      try {
-        var resp = await fetch('/shorts/elevenlabs-voices');
-        var data = await resp.json();
-        if (data.voices && data.voices.length > 0) {
-          select.innerHTML = data.voices.map(function(v) {
-            return '<option value="' + v.voice_id + '">' + v.name + ' (' + v.category + ')</option>';
-          }).join('');
-          narrationState.elevenlabsVoiceId = data.voices[0].voice_id;
-          select.onchange = function() { narrationState.elevenlabsVoiceId = this.value; };
-        } else {
-          select.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Settings</option>';
-        }
-      } catch (err) {
-        select.innerHTML = '<option value="">Error loading voices</option>';
-      }
-    }
+    // Expose for inline onclick handlers in the modal HTML.
+    window.setProvider = setProviderV2;
 
     async function generateNarration() {
       var btn = document.getElementById('narrate-generate-btn');
       var progress = document.getElementById('narration-progress');
 
-      // If openNarrationModal already kicked off a background prerender,
-      // wait for it to finish instead of spawning a second one. This is
-      // where users gain the most time — by the time they pick style +
-      // mix + voice and click Generate, the clip is typically already
-      // done, and this loop exits immediately.
-      if (narrationState.clipPrerenderInFlight) {
-        _setNarrationProgress(50, 'Waiting for background clip prep to finish…', 13, 'ok');
-        btn.disabled = true;
-        btn.textContent = 'Waiting on clip…';
-        while (narrationState.clipPrerenderInFlight) {
-          await new Promise(function(r) { setTimeout(r, 300); });
-        }
-        if (narrationState.clipPrerenderFailed) {
-          _setNarrationProgress(100, 'Error: ' + narrationState.clipPrerenderFailed, null, 'error');
-          btn.disabled = false;
-          btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
-          return;
-        }
-      }
+      // Show the don't-close warning — narration work is starting,
+      // and closing the modal from this point on will cancel it.
+      var _warnEl = document.getElementById('narration-keep-open-warning');
+      if (_warnEl) _warnEl.style.display = 'flex';
 
-      // Legacy path — only reachable if the prerender never started
-      // (e.g. clipFilename was already set when the modal opened from
-      // a previous Download Clip click). Same flow as before, just
-      // tightened to 1s polling.
+      // The clip is generated on demand when the user clicks Generate.
+      // No work has been done before this point, so no credits have
+      // been consumed. The /shorts/clip POST below is the first call
+      // that hits a credit-gated endpoint.
       if (!narrationState.clipFilename) {
         _setNarrationProgress(8, 'Generating clip first…', 50, 'ok');
         btn.disabled = true;
@@ -13521,7 +14980,14 @@ ${paginationHtml}
           audioMix: narrationState.audioMix,
           clipFilename: narrationState.clipFilename,
           ttsProvider: narrationState.provider,
-          elevenlabsVoiceId: narrationState.elevenlabsVoiceId
+          elevenlabsVoiceId: narrationState.elevenlabsVoiceId,
+          // v2 fields — back-end defaults handle missing values.
+          narrationIntensity: narrationState.intensity,
+          narrationDirection: narrationState.direction,
+          narrationLevel: narrationState.narrationLevel,
+          originalLevel: narrationState.originalLevel,
+          loudnessTarget: narrationState.loudnessTarget,
+          openaiVoiceId: narrationState.openaiVoiceId
         };
 
         var resp = await fetch('/shorts/narrate', {
@@ -13556,18 +15022,13 @@ ${paginationHtml}
               progress.appendChild(copyBtn);
               showToast('Narration script generated!');
             } else {
-              // Download narrated clip
-              _setNarrationProgress(100, 'Downloading narrated clip…', 0, 'ok');
-              var link = document.createElement('a');
-              link.href = '/shorts/narrate/download/' + filename;
-              link.download = filename;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
+              // Narrated clip is ready — give the user the choice of
+              // Download (the legacy behavior) OR Publish (parity with
+              // the Download Clip flow on viral moments). No auto-
+              // download — the user picks.
               _stopNarrationTicker();
-              _setNarrationProgress(100, 'Done!', 0, 'ok');
-              showToast('Narrated clip downloaded!');
-              closeNarrationModal();
+              _setNarrationProgress(100, 'Narrated clip ready!', 0, 'ok');
+              _showNarrationDoneActions(filename);
             }
             break;
           }
