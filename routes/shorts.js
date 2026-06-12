@@ -13291,16 +13291,14 @@ ${paginationHtml}
       });
       // Reset progress UI styling carried over from a previous attempt.
       _resetNarrationProgress();
-      // Pre-fire the clip render in the background. The user typically
-      // spends 5-15s picking style + mix + voice before clicking
-      // Generate — we want that time to overlap with the slowest
-      // step (clip render + source download). If clipFilename is
-      // already set, this is a no-op.
-      if (!narrationState.clipFilename) {
-        narrationState.currentStage = 'Preparing clip in background…';
-        _startNarrationTicker();
-        _prerenderClipForNarration();
-      }
+      // IMPORTANT: do NOT kick off the clip prerender here. /shorts/clip
+      // is gated by checkPlanLimit('clipsPerMonth'), so firing it the
+      // moment the modal opens would consume one of the user's monthly
+      // clip credits even if they close the modal without generating.
+      // Per Albert's spec — all work + credit consumption must wait
+      // until the user explicitly clicks 'Generate Narration'. The
+      // legacy clip-gen path inside generateNarration() handles the
+      // rendering when the button is clicked.
     }
 
     // Kicks off /shorts/clip in the background so the narration flow
@@ -13433,30 +13431,10 @@ ${paginationHtml}
       var btn = document.getElementById('narrate-generate-btn');
       var progress = document.getElementById('narration-progress');
 
-      // If openNarrationModal already kicked off a background prerender,
-      // wait for it to finish instead of spawning a second one. This is
-      // where users gain the most time — by the time they pick style +
-      // mix + voice and click Generate, the clip is typically already
-      // done, and this loop exits immediately.
-      if (narrationState.clipPrerenderInFlight) {
-        _setNarrationProgress(50, 'Waiting for background clip prep to finish…', 13, 'ok');
-        btn.disabled = true;
-        btn.textContent = 'Waiting on clip…';
-        while (narrationState.clipPrerenderInFlight) {
-          await new Promise(function(r) { setTimeout(r, 300); });
-        }
-        if (narrationState.clipPrerenderFailed) {
-          _setNarrationProgress(100, 'Error: ' + narrationState.clipPrerenderFailed, null, 'error');
-          btn.disabled = false;
-          btn.innerHTML = '<img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Generate Narration';
-          return;
-        }
-      }
-
-      // Legacy path — only reachable if the prerender never started
-      // (e.g. clipFilename was already set when the modal opened from
-      // a previous Download Clip click). Same flow as before, just
-      // tightened to 1s polling.
+      // The clip is generated on demand when the user clicks Generate.
+      // No work has been done before this point, so no credits have
+      // been consumed. The /shorts/clip POST below is the first call
+      // that hits a credit-gated endpoint.
       if (!narrationState.clipFilename) {
         _setNarrationProgress(8, 'Generating clip first…', 50, 'ok');
         btn.disabled = true;
