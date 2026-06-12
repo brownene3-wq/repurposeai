@@ -13356,7 +13356,13 @@ var LANGUAGE_NAMES = {
   'ja': 'Japanese', 'zh': 'Simplified Chinese', 'ko': 'Korean',
   'ar': 'Arabic', 'hi': 'Hindi', 'it': 'Italian', 'ru': 'Russian',
   'nl': 'Dutch', 'pl': 'Polish', 'tr': 'Turkish', 'vi': 'Vietnamese',
-  'id': 'Indonesian', 'en': 'English'
+  'id': 'Indonesian', 'en': 'English',
+  // Task #174 — Tagalog + Thai. The Whisper transcription step is
+  // language-agnostic (auto-detects source), and the GPT-4o-mini
+  // translator simply takes the English language name in the prompt,
+  // so adding a new pair here is enough to unlock the language end
+  // to end.
+  'tl': 'Tagalog', 'th': 'Thai'
 };
 router.post('/translate-captions', requireAuth, async (req, res) => {
   try {

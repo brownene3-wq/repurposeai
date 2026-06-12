@@ -4147,7 +4147,13 @@
       ['tr','\ud83c\uddf9\ud83c\uddf7 Turkish'], ['ar','\ud83c\uddf8\ud83c\udde6 Arabic'],
       ['hi','\ud83c\uddee\ud83c\uddf3 Hindi'],   ['vi','\ud83c\uddfb\ud83c\uddf3 Vietnamese'],
       ['id','\ud83c\uddee\ud83c\udde9 Indonesian'], ['ja','\ud83c\uddef\ud83c\uddf5 Japanese'],
-      ['ko','\ud83c\uddf0\ud83c\uddf7 Korean'],  ['zh','\ud83c\udde8\ud83c\uddf3 Chinese (Simplified)']
+      ['ko','\ud83c\uddf0\ud83c\uddf7 Korean'],  ['zh','\ud83c\udde8\ud83c\uddf3 Chinese (Simplified)'],
+      // Task #174 \u2014 Two new languages requested by Albert.
+      // 'tl' is the ISO-639-1 code for Tagalog (Philippines); GPT-4o
+      // and Whisper both speak it natively. 'th' is Thai \u2014 pairs
+      // naturally with the existing Southeast Asian set (Vietnamese,
+      // Indonesian, Tagalog) for that audience.
+      ['tl','\ud83c\uddf5\ud83c\udded Tagalog'], ['th','\ud83c\uddf9\ud83c\udded Thai']
     ];
     panel.innerHTML =
       '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83c\udf10 TRANSLATE CAPTIONS</div>' +
