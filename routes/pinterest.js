@@ -86,7 +86,7 @@ router.get('/connect', requireAuth, (req, res) => {
     client_id: PINTEREST_CLIENT_ID,
     redirect_uri: BASE_URL + '/auth/pinterest/callback',
     response_type: 'code',
-    scope: 'boards:read,pins:read,pins:write',
+    scope: 'boards:read,boards:write,pins:read,pins:write',
     state: state
   });
 
