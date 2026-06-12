@@ -138,7 +138,7 @@ router.get('/callback', async (req, res) => {
     let profileData = null;
     try {
       profileData = await httpsGet(
-        'https://api.pinterest.com/v5/user_account',
+        (process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/user_account',
         { Authorization: 'Bearer ' + access_token }
       );
       if (profileData && profileData.data) {
@@ -266,7 +266,7 @@ router.get('/boards', requireAuth, async (req, res) => {
     const accessToken = await getValidToken(user);
 
     const boardsData = await httpsGet(
-      'https://api.pinterest.com/v5/boards',
+      (process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/boards',
       { Authorization: 'Bearer ' + accessToken }
     );
 
@@ -350,7 +350,7 @@ router.post('/publish', requireAuth, async (req, res) => {
 
     // Create the pin
     const createData = await httpsPostJson(
-      'https://api.pinterest.com/v5/pins',
+      (process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/pins',
       pinData,
       { Authorization: 'Bearer ' + accessToken }
     );
