@@ -9860,17 +9860,6 @@ ${paginationHtml}
             </div>
             <input id="original-level-slider" type="range" min="0" max="100" value="30" style="width:100%;accent-color:#6c5ce7;">
           </div>
-          <div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-              <span style="font-size:12px;color:var(--text);font-weight:600;">Loudness target</span>
-              <span style="font-size:10px;color:var(--text-dim);">LUFS — consistent volume across clips</span>
-            </div>
-            <div style="display:flex;gap:8px;">
-              <button class="loudness-btn" data-loud="-16" style="flex:1;padding:7px;border-radius:8px;border:2px solid transparent;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">-16 LUFS<br><span style="font-size:9px;color:var(--text-dim);font-weight:500;">Broadcast</span></button>
-              <button class="loudness-btn active" data-loud="-14" style="flex:1;padding:7px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.10);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">-14 LUFS<br><span style="font-size:9px;color:var(--text-dim);font-weight:500;">Streaming</span></button>
-              <button class="loudness-btn" data-loud="-10" style="flex:1;padding:7px;border-radius:8px;border:2px solid transparent;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">-10 LUFS<br><span style="font-size:9px;color:var(--text-dim);font-weight:500;">Loud</span></button>
-            </div>
-          </div>
         </div>
       </div>
 
