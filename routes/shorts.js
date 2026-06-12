@@ -1658,13 +1658,18 @@ router.get('/', requireAuth, async (req, res) => {
 // AI pipeline as /analyze. Streams SSE updates and returns analysisId on completion.
 const _repurposeMod = require('./repurpose');
 const _fs = require('fs');
-router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single('file'), async (req, res) => {
+
+// Shared analysis pipeline for any uploaded-on-disk source video.
+// Used by /analyze-upload (multer-uploaded file) and /analyze-cloud-url
+// (file we just downloaded from Google Drive / Dropbox to disk).
+// On entry: filePath points at a video/audio file on disk owned by us;
+// fileName is the human-readable display name to store on the analysis.
+// On exit: SSE has been finalized and the file is cleaned up.
+async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
   let sseStarted = false;
-  let filePath = req.file ? req.file.path : null;
   let audioPath = null;
 
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     if (!process.env.OPENAI_API_KEY) {
       return res.status(500).json({ error: 'AI service is not configured. Please contact support.' });
     }
@@ -1680,7 +1685,6 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
     };
 
     const userId = req.user.id;
-    const fileName = req.file.originalname || 'Uploaded File';
 
     sendUpdate({ status: 'extracting_audio', message: 'Extracting audio...' });
     try {
@@ -1788,6 +1792,181 @@ router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single
   } finally {
     try { if (filePath && _fs.existsSync(filePath)) _fs.unlinkSync(filePath); } catch (e) {}
     try { if (audioPath && audioPath !== filePath && _fs.existsSync(audioPath)) _fs.unlinkSync(audioPath); } catch (e) {}
+  }
+}
+
+// Thin wrapper — runs multer for a multipart upload, then hands off
+// to the shared analysis helper.
+router.post('/analyze-upload', requireAuth, _repurposeMod.repurposeUpload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const filePath = req.file.path;
+  const fileName = req.file.originalname || 'Uploaded File';
+  return _runUploadAnalysisOnPath(req, res, filePath, fileName);
+});
+
+// ---- Google Drive / Dropbox import ----------------------------------
+// Given a public shareable URL, normalize to a direct-download URL,
+// stream the file to disk in CLIPS_DIR with a unique temp name, then
+// hand off to _runUploadAnalysisOnPath so the rest of the flow is
+// identical to a local file upload. Errors are surfaced as SSE
+// events to match analyze-upload's protocol.
+function _normalizeCloudUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const url = rawUrl.trim();
+  // Google Drive: https://drive.google.com/file/d/<ID>/view?usp=sharing
+  //               https://drive.google.com/open?id=<ID>
+  //               https://drive.google.com/uc?id=<ID>
+  let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (!m) m = url.match(/drive\.google\.com\/(?:open|uc)\?(?:[^&]*&)*id=([a-zA-Z0-9_-]+)/);
+  if (m) {
+    const id = m[1];
+    // confirm=t bypasses the "can't scan for viruses" interstitial
+    // that Drive serves for files >100MB. For smaller files it's a no-op.
+    return {
+      source: 'googledrive',
+      downloadUrl: `https://drive.google.com/uc?export=download&id=${id}&confirm=t`,
+      displayName: `Google Drive — ${id}`
+    };
+  }
+  // Dropbox: https://www.dropbox.com/s/abc/foo.mp4?dl=0
+  //          https://www.dropbox.com/scl/fi/abc/foo.mp4?...&dl=0
+  if (/dropbox\.com\//.test(url)) {
+    // Force ?dl=1 for direct download, regardless of existing dl param.
+    let dlUrl;
+    try {
+      const u = new URL(url);
+      u.searchParams.set('dl', '1');
+      // Dropbox content host avoids an extra redirect for some links.
+      if (u.hostname === 'www.dropbox.com') u.hostname = 'dl.dropboxusercontent.com';
+      dlUrl = u.toString();
+    } catch (e) {
+      dlUrl = url.replace(/([?&])dl=0(\b|$)/, '$1dl=1').replace(/^https?:\/\/www\.dropbox\.com/, 'https://dl.dropboxusercontent.com');
+      if (!/[?&]dl=1/.test(dlUrl)) dlUrl += (dlUrl.indexOf('?') === -1 ? '?' : '&') + 'dl=1';
+    }
+    // Pull a filename out of the URL path as a friendly display name.
+    let displayName = 'Dropbox upload';
+    try {
+      const parts = new URL(url).pathname.split('/');
+      const last = parts.filter(Boolean).pop();
+      if (last && /\.[a-z0-9]{2,5}$/i.test(last)) displayName = decodeURIComponent(last);
+    } catch (_) {}
+    return { source: 'dropbox', downloadUrl: dlUrl, displayName };
+  }
+  return null;
+}
+
+router.post('/analyze-cloud-url', requireAuth, async (req, res) => {
+  let sseStarted = false;
+  let tmpPath = null;
+  const sendUpdate = (data) => {
+    try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch (e) {}
+  };
+  const failBefore = (status, msg) => res.status(status).json({ error: msg });
+  const failAfter = (msg) => {
+    try {
+      res.write(`data: ${JSON.stringify({ status: 'error', message: msg })}\n\n`);
+      res.end();
+    } catch (e) {}
+  };
+
+  try {
+    const { url } = req.body || {};
+    const norm = _normalizeCloudUrl(url);
+    if (!norm) return failBefore(400, 'Paste a Google Drive or Dropbox shareable link.');
+    if (!process.env.OPENAI_API_KEY) return failBefore(500, 'AI service is not configured.');
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseStarted = true;
+
+    sendUpdate({ status: 'fetching', message: `Downloading from ${norm.source === 'googledrive' ? 'Google Drive' : 'Dropbox'}…` });
+
+    // Stream the cloud download to a temp file. Cap at 200 MB to
+    // match the multer upload limit. node-fetch v2 returns a Node
+    // Readable stream as `body`, which we pipe straight to disk.
+    const fetch = (typeof globalThis.fetch === 'function')
+      ? globalThis.fetch
+      : require('node-fetch');
+    const dlResp = await fetch(norm.downloadUrl, { redirect: 'follow' });
+    if (!dlResp.ok) {
+      return failAfter(`Cloud download failed (HTTP ${dlResp.status}). Make sure the link is publicly shareable.`);
+    }
+
+    // Pick an extension from the response or URL — defaults to .mp4
+    // for "video/*" + .m4a for "audio/*"; otherwise .bin.
+    const ct = (dlResp.headers.get('content-type') || '').toLowerCase();
+    let ext = '.mp4';
+    if (ct.startsWith('audio/')) ext = '.m4a';
+    else if (ct.startsWith('video/mp4')) ext = '.mp4';
+    else if (ct.startsWith('video/quicktime')) ext = '.mov';
+    else if (ct.startsWith('video/x-matroska')) ext = '.mkv';
+    else if (ct.startsWith('video/webm')) ext = '.webm';
+    else {
+      // Fall back to the URL's file extension if any.
+      const urlExtMatch = (norm.displayName || url || '').match(/\.([a-z0-9]{2,5})(?:\?|$)/i);
+      if (urlExtMatch) ext = '.' + urlExtMatch[1].toLowerCase();
+    }
+
+    const tmpId = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    tmpPath = path.join(CLIPS_DIR, `_cloud_${tmpId}${ext}`);
+
+    const MAX_BYTES = 200 * 1024 * 1024;
+    let received = 0;
+    const writeStream = _fs.createWriteStream(tmpPath);
+    await new Promise((resolve, reject) => {
+      const stream = dlResp.body;
+      if (!stream || typeof stream.on !== 'function') {
+        // WHATWG ReadableStream (undici / global fetch) — adapt.
+        (async () => {
+          try {
+            const reader = stream.getReader();
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              received += value.length;
+              if (received > MAX_BYTES) {
+                writeStream.destroy();
+                reject(new Error('File exceeds 200 MB limit.'));
+                return;
+              }
+              writeStream.write(Buffer.from(value));
+            }
+            writeStream.end(resolve);
+          } catch (e) { writeStream.destroy(); reject(e); }
+        })();
+        return;
+      }
+      stream.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > MAX_BYTES) {
+          stream.destroy(new Error('size_limit'));
+          writeStream.destroy();
+          reject(new Error('File exceeds 200 MB limit.'));
+          return;
+        }
+        writeStream.write(chunk);
+      });
+      stream.on('end', () => writeStream.end(resolve));
+      stream.on('error', (e) => { writeStream.destroy(); reject(e); });
+    });
+
+    // Hand off to the shared upload-analysis flow. It will own the
+    // SSE response from here, including res.end().
+    return _runUploadAnalysisOnPath(req, res, tmpPath, norm.displayName || ('Cloud import (' + norm.source + ')'));
+  } catch (err) {
+    console.error('analyze-cloud-url error:', err);
+    if (!sseStarted) {
+      return failBefore(500, err.message || 'Cloud import failed.');
+    }
+    return failAfter(err.message || 'Cloud import failed.');
+  } finally {
+    // _runUploadAnalysisOnPath rm's the tmp file itself via its own
+    // finally block; this is just a safety net for paths that error
+    // out before the handoff.
+    try { if (tmpPath && _fs.existsSync(tmpPath)) _fs.unlinkSync(tmpPath); } catch (e) {}
   }
 });
 
@@ -8148,6 +8327,40 @@ function renderShortsPage(user, analyses, currentPage = 1, hasMore = false, team
             <div style="font-size:12px;color:#888;" id="uploadStatusDetail">Sending file to server</div>
           </div>
         </div>
+        <!-- Cloud import row — Drive + Dropbox shareable-link import. -->
+        <div style="display:flex;align-items:center;gap:16px;margin:14px 0 10px;">
+          <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+          <span style="font-size:12px;color:#888;letter-spacing:0.08em;font-weight:600;">OR IMPORT FROM</span>
+          <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+          <button type="button" onclick="openCloudImport('googledrive')" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;background:var(--surface);border:1px solid var(--border-subtle);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='#4285f4';this.style.background='rgba(66,133,244,0.06)'" onmouseout="this.style.borderColor='var(--border-subtle)';this.style.background='var(--surface)'">
+            <img src="/images/section-icons/A-74.png" alt="" style="height:18px;width:18px;border-radius:4px"> Google Drive
+          </button>
+          <button type="button" onclick="openCloudImport('dropbox')" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;background:var(--surface);border:1px solid var(--border-subtle);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='#0061ff';this.style.background='rgba(0,97,255,0.06)'" onmouseout="this.style.borderColor='var(--border-subtle)';this.style.background='var(--surface)'">
+            <img src="/images/section-icons/A-75.png" alt="" style="height:18px;width:18px;border-radius:4px"> Dropbox
+          </button>
+        </div>
+      </div>
+
+      <!-- Cloud import modal — shared by Google Drive + Dropbox.
+           Asks the user to paste a publicly shareable link; server
+           downloads the file and runs the standard upload pipeline. -->
+      <div id="cloudImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+        <div style="background:var(--surface);border-radius:16px;padding:28px;max-width:520px;width:92%;position:relative;border:1px solid var(--border-subtle);">
+          <button onclick="closeCloudImport()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;">&times;</button>
+          <h3 id="cloudImportTitle" style="margin:0 0 6px;font-size:18px;font-weight:700;color:var(--text);">Import from Google Drive</h3>
+          <p id="cloudImportHint" style="margin:0 0 16px;font-size:13px;color:var(--text-muted);line-height:1.5;">Paste a publicly shareable Google Drive link. In Drive, right-click the file → Share → Anyone with the link → Copy link.</p>
+          <input id="cloudImportUrl" type="url" placeholder="https://drive.google.com/file/d/.../view?usp=sharing" style="width:100%;padding:11px 14px;border-radius:10px;border:1px solid var(--border-subtle);background:var(--surface-light);color:var(--text);font-size:13px;margin-bottom:14px;outline:none;" onkeydown="if(event.key==='Enter')submitCloudImport()">
+          <div id="cloudImportBusy" style="display:none;margin-bottom:12px;font-size:13px;color:var(--text);">
+            <span class="loading"></span> <span id="cloudImportStatusText">Downloading…</span>
+            <div id="cloudImportStatusDetail" style="font-size:12px;color:var(--text-muted);margin-top:4px;"></div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button onclick="closeCloudImport()" style="padding:10px 16px;border-radius:10px;border:1px solid var(--border-subtle);background:transparent;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>
+            <button id="cloudImportSubmit" onclick="submitCloudImport()" style="padding:10px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#6C3AED 0%,#EC4899 100%);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Import &amp; Analyze</button>
+          </div>
+        </div>
       </div>
 
       <!-- Premium Tools Grid -->
@@ -9095,6 +9308,107 @@ ${paginationHtml}
         if (inp) inp.value = '';
       }
     }
+
+    // ── Cloud import (Google Drive + Dropbox) ────────────────────────
+    // Opens the cloud import modal pre-configured for the requested
+    // source. The actual download happens server-side in
+    // POST /shorts/analyze-cloud-url — same SSE protocol as
+    // /analyze-upload, so we can reuse the same stream-reader.
+    function openCloudImport(source) {
+      var modal = document.getElementById('cloudImportModal');
+      var title = document.getElementById('cloudImportTitle');
+      var hint = document.getElementById('cloudImportHint');
+      var input = document.getElementById('cloudImportUrl');
+      var busy = document.getElementById('cloudImportBusy');
+      var submit = document.getElementById('cloudImportSubmit');
+      if (!modal) return;
+      if (source === 'dropbox') {
+        if (title) title.textContent = 'Import from Dropbox';
+        if (hint) hint.textContent = 'Paste a publicly shareable Dropbox link. In Dropbox, click Share on the file → Copy link.';
+        if (input) input.placeholder = 'https://www.dropbox.com/s/.../filename.mp4?dl=0';
+      } else {
+        if (title) title.textContent = 'Import from Google Drive';
+        if (hint) hint.textContent = 'Paste a publicly shareable Google Drive link. In Drive, right-click the file → Share → Anyone with the link → Copy link.';
+        if (input) input.placeholder = 'https://drive.google.com/file/d/.../view?usp=sharing';
+      }
+      if (input) input.value = '';
+      if (busy) busy.style.display = 'none';
+      if (submit) { submit.disabled = false; submit.textContent = 'Import & Analyze'; }
+      modal.style.display = 'flex';
+      if (input) setTimeout(function() { input.focus(); }, 50);
+    }
+    function closeCloudImport() {
+      var modal = document.getElementById('cloudImportModal');
+      if (modal) modal.style.display = 'none';
+    }
+    async function submitCloudImport() {
+      var input = document.getElementById('cloudImportUrl');
+      var busy = document.getElementById('cloudImportBusy');
+      var statusText = document.getElementById('cloudImportStatusText');
+      var statusDetail = document.getElementById('cloudImportStatusDetail');
+      var submit = document.getElementById('cloudImportSubmit');
+      var url = (input && input.value || '').trim();
+      if (!url) { showToast('Paste a shareable Drive or Dropbox link first.'); return; }
+      if (busy) busy.style.display = 'block';
+      if (submit) { submit.disabled = true; submit.textContent = 'Importing…'; }
+      if (statusText) statusText.textContent = 'Downloading from cloud…';
+      if (statusDetail) statusDetail.textContent = '';
+      try {
+        var response = await fetch('/shorts/analyze-cloud-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        var contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          var data = await response.json();
+          throw new Error(data.error || 'Import failed');
+        }
+        if (!response.ok) throw new Error('Import failed. Please try again.');
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var sseBuffer = '';
+        var lastStatus = null;
+        while (true) {
+          var read = await reader.read();
+          if (read.done) break;
+          sseBuffer += decoder.decode(read.value, { stream: true });
+          var lines = sseBuffer.split('\n\n');
+          sseBuffer = lines.pop() || '';
+          for (var i = 0; i < lines.length; i++) {
+            var ln = lines[i].trim();
+            if (!ln.startsWith('data: ')) continue;
+            var evt;
+            try { evt = JSON.parse(ln.slice(6)); } catch (e) { continue; }
+            lastStatus = evt;
+            if (statusText) {
+              if (evt.status === 'fetching') statusText.textContent = 'Downloading from cloud…';
+              else if (evt.status === 'extracting_audio') statusText.textContent = 'Extracting audio…';
+              else if (evt.status === 'transcribing') statusText.textContent = 'Transcribing…';
+              else if (evt.status === 'analyzing') statusText.textContent = 'Analyzing viral moments…';
+              else if (evt.status === 'completed') statusText.textContent = 'Done!';
+              else if (evt.status === 'error') statusText.textContent = 'Error';
+            }
+            if (statusDetail && evt.message) statusDetail.textContent = evt.message;
+          }
+        }
+        if (lastStatus && lastStatus.status === 'completed') {
+          showToast('Analysis complete! Loading…');
+          setTimeout(function() { location.reload(); }, 1000);
+        } else if (lastStatus && lastStatus.status === 'error') {
+          throw new Error(lastStatus.message || 'Cloud import failed');
+        }
+      } catch (err) {
+        if (busy) busy.style.display = 'none';
+        if (submit) { submit.disabled = false; submit.textContent = 'Import & Analyze'; }
+        showToast('Cloud import error: ' + (err.message || err));
+      }
+    }
+    // Expose for inline onclick handlers (the script runs in an IIFE-ish
+    // top-level context inside the rendered page).
+    window.openCloudImport = openCloudImport;
+    window.closeCloudImport = closeCloudImport;
+    window.submitCloudImport = submitCloudImport;
 
     // ── Analyze placeholder card ─────────────────────────────────────
     // After the user accepts the disclaimer, we drop a non-interactive
