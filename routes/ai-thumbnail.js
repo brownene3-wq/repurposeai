@@ -112,13 +112,10 @@ async function downloadYouTubeVideo(videoUrl) {
   // Clean up any existing file
   try { fs.unlinkSync(outputPath); } catch (e) {}
 
-  // Strategy 1: yt-dlp (with cookie-pool warm-account cookies)
+  // Strategy 1: yt-dlp
   if (ytdlpPath) {
-    const { pickCookieHandle } = require('../utils/cookie-pool');
-    const _cookieHandle = await pickCookieHandle();
-    const _cookieArgs = _cookieHandle ? _cookieHandle.args : getYoutubeCookiesArgs();
     try {
-      console.log(`[AI Thumbnail] Downloading ${videoUrl} via yt-dlp (pool=${_cookieHandle ? _cookieHandle.label : 'none'})...`);
+      console.log(`[AI Thumbnail] Downloading ${videoUrl} via yt-dlp...`);
       await new Promise((resolve, reject) => {
         const proc = spawn(ytdlpPath, [
           '--no-playlist',
@@ -131,8 +128,8 @@ async function downloadYouTubeVideo(videoUrl) {
           '--no-part',
           '--force-overwrites',
           ...YTDLP_COMMON_ARGS,
-          ..._cookieArgs,
-          ...(_cookieHandle && _cookieHandle.proxyArgs ? _cookieHandle.proxyArgs : getYoutubeProxyArgs()),
+          ...getYoutubeCookiesArgs(),
+          ...getYoutubeProxyArgs(),
           videoUrl
         ]);
         let stderr = '';
@@ -157,13 +154,10 @@ async function downloadYouTubeVideo(videoUrl) {
 
       if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
         console.log(`[AI Thumbnail] yt-dlp download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
-        if (_cookieHandle) { await _cookieHandle.markSuccess(); _cookieHandle.cleanup(); }
         return outputPath;
       }
-      if (_cookieHandle) { await _cookieHandle.markFailure('no file produced'); _cookieHandle.cleanup(); }
     } catch (err) {
       console.log(`[AI Thumbnail] yt-dlp failed: ${err.message.slice(0, 200)}`);
-      if (_cookieHandle) { await _cookieHandle.markFailure(err.message); _cookieHandle.cleanup(); }
     }
   }
 
@@ -188,27 +182,6 @@ async function downloadYouTubeVideo(videoUrl) {
     } catch (err) {
       console.log(`[AI Thumbnail] ytdl-core fallback failed: ${err.message.slice(0, 200)}`);
     }
-  }
-
-
-  // ---- Strategy 3: ScrapingBee paid fallback ($49.99/mo Freelance plan).
-  // When the IPRoyal proxies + ytdl-core both fail (typical when YouTube's
-  // bot detection is aggressive that hour), route a fresh yt-dlp through
-  // ScrapingBee's premium residential proxy pool.
-  try {
-    const { downloadWithScrapingBee, isScrapingBeeEnabled } = require('../utils/scrapingbee-youtube');
-    if (isScrapingBeeEnabled()) {
-      console.log('[AI Thumbnail] Trying ScrapingBee paid fallback...');
-      await downloadWithScrapingBee(videoUrl, outputPath, ytdlpPath || 'yt-dlp', YTDLP_COMMON_ARGS, () => {});
-      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10000) {
-        console.log(`[AI Thumbnail] ScrapingBee download success: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(1)}MB`);
-        return outputPath;
-      }
-    } else {
-      console.log('[AI Thumbnail] ScrapingBee not configured (SCRAPINGBEE_API_KEY missing)');
-    }
-  } catch (err) {
-    console.log(`[AI Thumbnail] ScrapingBee fallback failed: ${(err && err.message || err).toString().slice(0, 200)}`);
   }
 
   throw new Error('YOUTUBE_DOWNLOAD_FAILED');
@@ -1044,7 +1017,203 @@ const LAYOUT_LIBRARY = {
 };
 
 // ============================================================================
-// Frame-based thumbnail pipeline (replaces Flux Schnell synthetic backgrounds)
+// Premium synthetic thumbnail pipeline (Flux 1.1 Pro + InstantID)
+// ----------------------------------------------------------------------------
+// Default AI Generated tab path. Replaces the frame-based screenshot approach
+// with custom AI-generated imagery so the output is competitive with platforms
+// like Thumbnailer.ai / Clickly. The video is analyzed for context; GPT-4o-mini
+// crafts N distinct creative concepts with rich Flux-ready prompts; each is
+// rendered by Flux 1.1 Pro (or InstantID when the user supplied a face) to
+// produce a unique, scroll-stopping scene; finally the hook title is burned
+// in with preset typography.
+// ============================================================================
+
+const PREMIUM_NEGATIVE = 'text, words, letters, captions, subtitles, watermark, logo, low quality, blurry, distorted, deformed, ugly, cluttered, busy background, multiple subjects, overlapping people, malformed hands';
+
+// Stage A — Concept generation. Produces `count` highly varied, creative
+// concepts from the video's analysis metadata. Each concept is shaped so a
+// downstream text-to-image model can produce a strong single-subject scene.
+async function generateSyntheticConcepts({ transcript, hint, videoTitle, count, preset, hasFace, analysis }) {
+  const safeTranscript = (transcript || '').slice(0, 8000);
+  const tags = (analysis && Array.isArray(analysis.tags) && analysis.tags.length) ? analysis.tags.join(', ') : '(unknown)';
+  const emotion = (analysis && analysis.emotion) || 'engaging';
+  const context = (analysis && analysis.context) || '';
+  const knownHookTopic = (analysis && analysis.hookTopic) || '';
+
+  // Force concept diversity by asking for distinct creative angles.
+  const angles = ['CHARACTER_FOCUS', 'ACTION_FOCUS', 'OBJECT_FOCUS', 'CONCEPT_FOCUS'];
+  const requestedAngles = angles.slice(0, Math.max(count, 1));
+
+  const systemPrompt =
+    'You are an elite YouTube thumbnail art director designing for the "' + preset.name + '" preset.\n' +
+    'Preset DNA: ' + preset.description + '\n' +
+    'Preset visual mood: ' + (preset.backgroundSuffix || '') + '\n\n' +
+    'Your job: produce exactly ' + count + ' COMPLETELY DIFFERENT thumbnail concepts. Each concept will be sent to a text-to-image model (Flux 1.1 Pro). The output must be a single high-impact scene that stops a viewer mid-scroll on a social feed.\n\n' +
+    'RULES for every concept:\n' +
+    '- Photorealistic or cinematic; NO cartoon, anime, watercolor, or sketch unless the video is explicitly that genre.\n' +
+    '- Exactly ONE clear hero subject in the frame. No collages, no split screens, no multiple unrelated subjects.\n' +
+    '- Composition must leave clean negative space in the TOP-LEFT for the title overlay.\n' +
+    '- Dramatic, controlled lighting (cinematic key light, rim light, golden hour, neon, etc.) — never flat ambient.\n' +
+    '- Vivid, intentional color palette (2-3 dominant colors max) that fits the emotion.\n' +
+    '- Physically plausible — no extra limbs, no mangled hands, no surreal anatomy unless intentional.\n' +
+    '- NO text, NO logos, NO watermarks anywhere in the rendered image. Title is composited separately.\n' +
+    (hasFace
+      ? '- A real person will be inserted into the scene via InstantID. Compose the scene around a single human subject; describe the BODY POSE, EXPRESSION, ATTIRE, and ENVIRONMENT but DO NOT describe their face/identity — that comes from the user.\n'
+      : '- People are allowed but optional; if you include a person, describe a generic stock-style subject (no specific celebrity / real identity).\n') +
+    '\n' +
+    'Use these creative angles, one per concept (use exactly this assignment order):\n' +
+    requestedAngles.map((a, i) => '  ' + (i + 1) + '. ' + a).join('\n') + '\n\n' +
+    'Angle definitions:\n' +
+    '  CHARACTER_FOCUS — a person in the foreground showing intense emotion (' + emotion + '). Subject takes 50–70% of frame.\n' +
+    '  ACTION_FOCUS    — a dramatic moment captured mid-action (the verb / event the video is about). Strong motion energy.\n' +
+    '  OBJECT_FOCUS    — a single hero object that represents the video\'s topic, shot like a product hero (macro, dramatic light).\n' +
+    '  CONCEPT_FOCUS   — a metaphorical or symbolic scene that captures the abstract idea (works for tutorials/educational content).\n\n' +
+    'For each concept return:\n' +
+    '{\n' +
+    '  "title":         "1-4 word ALL-CAPS hook (curiosity-driven, NOT the video title)",\n' +
+    '  "angle":         one of CHARACTER_FOCUS / ACTION_FOCUS / OBJECT_FOCUS / CONCEPT_FOCUS,\n' +
+    '  "heroSubject":   "short phrase naming the hero subject",\n' +
+    '  "emotion":       "the emotional pulse of this concept",\n' +
+    '  "palette":       "2-3 dominant colors with light/dark tone",\n' +
+    '  "composition":   "where the subject sits + where the negative space is",\n' +
+    '  "fullPrompt":    "ONE rich detailed text-to-image prompt combining hero subject, action/pose, lighting, palette, composition, environment, camera angle, lens, and the preset visual mood. 60-140 words. Production-grade language."\n' +
+    '}\n\n' +
+    'Return JSON: { "hookTopic": "...", "concepts": [ {...}, {...} ] }';
+
+  const userPrompt =
+    'Video title: ' + (videoTitle || '(unknown)') + '\n' +
+    'Hook topic (analysis): ' + (knownHookTopic || '(none)') + '\n' +
+    'Content tags: ' + tags + '\n' +
+    'Emotional tone: ' + emotion + '\n' +
+    'Context: ' + (context || '(none)') + '\n' +
+    'User style hint: ' + (hint || '(none)') + '\n' +
+    'User uploaded face? ' + (hasFace ? 'YES' : 'NO') + '\n\n' +
+    'Transcript (may be truncated):\n"""\n' + (safeTranscript || '(no transcript)') + '\n"""';
+
+  const resp = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.9,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
+  });
+  const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
+  if (!raw) throw new Error('Synthetic concept generation returned empty');
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (e) { throw new Error('Concept JSON parse failed'); }
+  const concepts = Array.isArray(parsed.concepts) ? parsed.concepts : [];
+  if (concepts.length === 0) throw new Error('No concepts returned');
+
+  const hookTopic = String(parsed.hookTopic || '').slice(0, 160);
+  return {
+    hookTopic,
+    concepts: concepts.slice(0, count).map((c, i) => ({
+      title:        String(c.title || ('Concept ' + (i + 1))).slice(0, 60),
+      angle:        String(c.angle || requestedAngles[i] || 'CHARACTER_FOCUS').slice(0, 32),
+      heroSubject:  String(c.heroSubject || '').slice(0, 200),
+      emotion:      String(c.emotion || emotion).slice(0, 80),
+      palette:      String(c.palette || '').slice(0, 120),
+      composition:  String(c.composition || '').slice(0, 200),
+      fullPrompt:   String(c.fullPrompt || c.prompt || '').slice(0, 2400)
+    }))
+  };
+}
+
+// Stage B (no face) — Render a concept via Flux 1.1 Pro. Returns local PNG path.
+async function generateSyntheticBg({ concept, preset, aspect, jobId, index }) {
+  if (!process.env.REPLICATE_API_TOKEN) throw new Error('REPLICATE_API_TOKEN not configured');
+  if (!replicate) throw new Error('Replicate SDK not installed on this server.');
+
+  // Resolve aspect to width/height. Flux 1.1 Pro accepts aspect_ratio strings.
+  const aspectRatio = aspect === '9:16' ? '9:16' : aspect === '1:1' ? '1:1' : '16:9';
+
+  // Stitch the rich prompt with the preset's signature visual mood for extra
+  // consistency. The preset's backgroundSuffix already encodes color/lighting
+  // hints; layering it on top of the concept's full prompt biases Flux toward
+  // the preset's overall vibe without overriding the concept's hero subject.
+  const finalPrompt = (concept.fullPrompt || '') + '\n\nVisual mood: ' + (preset.backgroundSuffix || '') + '. Do NOT render any text, words, letters, captions, or logos anywhere in the image.';
+
+  const prediction = await replicate.predictions.create({
+    model: 'black-forest-labs/flux-1.1-pro',
+    input: {
+      prompt: finalPrompt,
+      aspect_ratio: aspectRatio,
+      output_format: 'png',
+      output_quality: 95,
+      safety_tolerance: 5,
+      prompt_upsampling: false
+    }
+  });
+  const final = await replicate.wait(prediction, { interval: 1500 });
+  if (final.status !== 'succeeded') {
+    throw new Error('flux-1.1-pro ' + final.status + ': ' + (final.error || 'unknown'));
+  }
+  const out = final.output;
+  const url = Array.isArray(out) ? out[0] : out;
+  if (!url || typeof url !== 'string') throw new Error('Flux returned no image URL');
+
+  const imgResp = await fetch(url);
+  if (!imgResp.ok) throw new Error('Failed to download generated image: HTTP ' + imgResp.status);
+  const bgPath = path.join(outputDir, 'syn-bg-' + jobId + '-' + index + '.png');
+  fs.writeFileSync(bgPath, Buffer.from(await imgResp.arrayBuffer()));
+  return bgPath;
+}
+
+// Stage B (with face) — Render a concept via InstantID, baking the user's
+// face naturally into the synthetic scene. Returns local PNG path.
+async function generateSyntheticWithFace({ concept, preset, aspect, jobId, index, facePath }) {
+  if (!process.env.REPLICATE_API_TOKEN) throw new Error('REPLICATE_API_TOKEN not configured');
+  if (!replicate) throw new Error('Replicate SDK not installed on this server.');
+  if (!facePath || !fs.existsSync(facePath)) throw new Error('Face image not found');
+
+  // InstantID resolution: keep total under 1MP for speed. 1024x576 (16:9),
+  // 576x1024 (9:16), 768x768 (1:1).
+  const dims = aspect === '9:16' ? { w: 576, h: 1024 }
+             : aspect === '1:1'  ? { w: 768, h: 768 }
+             : { w: 1024, h: 576 };
+
+  const faceBuf = fs.readFileSync(facePath);
+  const ext = (path.extname(facePath) || '.jpg').toLowerCase().replace('.', '');
+  const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  const faceUri = 'data:' + mime + ';base64,' + faceBuf.toString('base64');
+
+  const prompt = (concept.fullPrompt || '') + '\n\nVisual mood: ' + (preset.backgroundSuffix || '') + '. Do NOT render any text, words, letters, captions, or logos.';
+
+  const prediction = await replicate.predictions.create({
+    model: 'zsxkib/instant-id',
+    input: {
+      image: faceUri,
+      prompt: prompt,
+      negative_prompt: PREMIUM_NEGATIVE,
+      width: dims.w,
+      height: dims.h,
+      num_inference_steps: 30,
+      guidance_scale: 5,
+      ip_adapter_scale: 0.8,
+      controlnet_conditioning_scale: 0.8,
+      enhance_nonface_region: true,
+      output_format: 'png'
+    }
+  });
+  const final = await replicate.wait(prediction, { interval: 1500 });
+  if (final.status !== 'succeeded') {
+    throw new Error('instant-id ' + final.status + ': ' + (final.error || 'unknown'));
+  }
+  const out = final.output;
+  const url = Array.isArray(out) ? out[0] : out;
+  if (!url || typeof url !== 'string') throw new Error('InstantID returned no image URL');
+
+  const imgResp = await fetch(url);
+  if (!imgResp.ok) throw new Error('Failed to download InstantID image: HTTP ' + imgResp.status);
+  const bgPath = path.join(outputDir, 'syn-face-' + jobId + '-' + index + '.png');
+  fs.writeFileSync(bgPath, Buffer.from(await imgResp.arrayBuffer()));
+  return bgPath;
+}
+
+// ============================================================================
+// Frame-based thumbnail pipeline (DEPRECATED — kept for reference only)
 // ----------------------------------------------------------------------------
 // The new flow follows the 5-stage spec:
 //   1. Extract evenly-spaced candidate frames from the video (ffmpeg)
@@ -1080,7 +1249,10 @@ function getVideoDuration(videoPath) {
 
 // Stage 1 — Extract `count` evenly-spaced candidate frames from the video.
 // Skips the first 5% and last 5% (intros/outros are usually weak). Returns
-// an array of { path, timestamp } sorted by timestamp.
+// an array of { path, previewPath, timestamp } sorted by timestamp.
+// Runs all ffmpeg extracts in parallel (10× faster than the sequential loop).
+// Each frame also gets a downscaled "preview" version (384px wide) used for
+// the vision-scoring call to keep the OpenAI payload small.
 async function extractCandidateFrames(videoPath, count = 8) {
   const duration = await getVideoDuration(videoPath);
   // If we can't get duration, fall back to fixed timestamps assuming the
@@ -1383,6 +1555,7 @@ async function extractCreatorFromFrame(framePath) {
   fs.writeFileSync(cachedPath, Buffer.from(await imgResp.arrayBuffer()));
   return cachedPath;
 }
+
 // Run a face image through Replicate's background remover and return the
 // path to the local PNG cutout. Cached per-hash so re-uploads of the same
 // face don't re-pay rembg costs within the lifetime of /tmp.
@@ -4053,11 +4226,12 @@ ${pageStyles}
     let aiProgressTimer = null;
     function startAIProgress() {
       const stages = [
-        'Downloading video…',
-        'Extracting audio + sampling frames…',
-        'Scoring frames for virality (face, emotion, contrast)…',
-        'Picking the highest-CTR moments…',
-        (aiFaceFile ? 'Face-swapping your headshot onto chosen frames…' : 'Preparing the chosen frames…'),
+        'Reading video context (transcript + topic)…',
+        'AI art director drafting creative concepts…',
+        (aiFaceFile
+          ? 'Generating premium AI imagery with your face baked in via InstantID…'
+          : 'Generating premium AI imagery with Flux 1.1 Pro…'),
+        'Polishing color, contrast, and detail…',
         'Burning in hook text + composing the final thumbnails…'
       ];
       let idx = 0;
@@ -4145,20 +4319,21 @@ ${pageStyles}
       }
       caption.textContent = bits.join(' · ');
 
+      const angleNice = { CHARACTER_FOCUS: 'Character focus', ACTION_FOCUS: 'Action focus', OBJECT_FOCUS: 'Object focus', CONCEPT_FOCUS: 'Concept focus' };
       data.thumbnails.forEach(thumb => {
         const card = document.createElement('div');
         card.className = 'ai-thumb-card';
-        const typeLabel = thumb.outputType || 'Generated Thumbnail';
-        const tsLabel = (typeof thumb.timestamp === 'number') ? ' &middot; ' + formatTs(thumb.timestamp) : '';
-        const scoreLabel = (thumb.scores && typeof thumb.scores.overall === 'number')
-          ? ' &middot; CTR score ' + thumb.scores.overall.toFixed(1) + '/10' : '';
-        const swapBadge = thumb.faceSwapped ? '<span class="ai-thumb-badge">face-swapped</span>' : '';
+        const typeLabel = thumb.outputType || 'AI Synthesis';
+        const angleLabel = thumb.angle && angleNice[thumb.angle] ? ' &middot; ' + angleNice[thumb.angle] : '';
+        const emotionLabel = thumb.emotion ? ' &middot; ' + escapeHtml(thumb.emotion) : '';
+        const swapBadge = thumb.faceSwapped ? '<span class="ai-thumb-badge">your face</span>' : '';
+        const detailLine = [thumb.heroSubject, thumb.palette].filter(Boolean).join(' &middot; ');
         card.innerHTML = \`
           <img src="/ai-thumbnail/serve/\${thumb.filename}" class="ai-thumb-image" alt="\${(thumb.title || 'AI Thumbnail').replace(/"/g, '&quot;')}">
           <div class="ai-thumb-body">
-            <div class="ai-thumb-kicker">\${escapeHtml(typeLabel)}\${tsLabel}\${scoreLabel}</div>
+            <div class="ai-thumb-kicker">\${escapeHtml(typeLabel)}\${angleLabel}\${emotionLabel}</div>
             <div class="ai-thumb-title">\${escapeHtml(thumb.title || 'AI Thumbnail')} \${swapBadge}</div>
-            \${thumb.sceneNote ? '<div class="ai-thumb-moment">' + escapeHtml(thumb.sceneNote) + '</div>' : ''}
+            \${detailLine ? '<div class="ai-thumb-moment">' + detailLine + '</div>' : ''}
             <a href="/ai-thumbnail/download/\${thumb.filename}" class="ai-thumb-download" download>Download</a>
           </div>
         \`;
@@ -4805,23 +4980,6 @@ router.post('/style', requireAuth, requireCredits('ai-thumbnail'), requireStorag
       return res.status(500).json({ success: false, message: 'Thumbnail generation failed' });
     }
 
-    // Library — log each generated thumbnail image so it appears
-    // under the 'Thumbnails' tab. kind:'image' so the Library card
-    // grid knows to render as an <img> rather than <video>.
-    try {
-      const { recordRender } = require('../utils/renderRecorder');
-      thumbnails.forEach(function(t) {
-        const absPath = path.join(outputDir, t.filename);
-        recordRender(req.user.id, {
-          tool: 'ai-thumbnail',
-          kind: 'image',
-          absPath: absPath,
-          title: (t.styleName || 'Thumbnail') + ' — ' + (t.description || ''),
-          metadata: { style: t.style, styleName: t.styleName }
-        }).catch(function(e){ console.warn('[ai-thumbnail] recordRender:', e && e.message); });
-      });
-    } catch (recErr) { console.warn('[ai-thumbnail] recordRender require failed:', recErr.message); }
-
     res.json({ success: true, thumbnails: thumbnails });
     featureUsageOps.log(req.user.id, 'ai_thumbnails').catch(() => {});
   } catch (error) {
@@ -5084,110 +5242,91 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
       }
     }
 
-    // ===== NEW: Frame-based pipeline =====
-    // Stage 1: extract candidate frames
-    let scoredFrames = [];
-    try {
-      const candidates = await extractCandidateFrames(videoPath, 8);
-      if (candidates.length === 0) {
-        return res.status(500).json({ success: false, message: 'Could not extract any frames from the video.' });
-      }
-      // Stage 2: score them with vision
+    // ===== PREMIUM SYNTHETIC PIPELINE =====
+    // 1. Use the cached analysis (or compute on-the-fly if no analysisJobId).
+    // 2. Generate N varied creative concepts via GPT-4o-mini.
+    // 3. For each concept: Flux 1.1 Pro (no face) OR InstantID (with face).
+    // 4. Burn in the hook text via ffmpeg drawtext.
+    // No video frames are used as the final image — every thumbnail is a
+    // unique, scroll-stopping scene tailored to the video's content.
+
+    // Make sure we have analysis. /analyze populates ANALYSIS_CACHE when the
+    // user clicks Continue on Step 1, so we usually have it. If not (e.g.
+    // user skipped the eager step), run a quick fallback analysis now.
+    // `analysis` was declared earlier (line ~5177) and populated from the cache
+    // if the user came through Step 1; here we backfill it if it's still null.
+    if (!analysis) {
       try {
-        scoredFrames = await scoreCandidateFrames(candidates);
-      } catch (scoreErr) {
-        console.warn('[AI Thumbnail AI-Gen] Frame scoring failed, falling back to even-spread selection:', scoreErr.message);
-        // Fallback: pretend every frame scored equally so we can still pick top N
-        scoredFrames = candidates.map((c, i) => ({ ...c, facePresent: false, emotionScore: 0, contrastScore: 5, compositionScore: 5, overall: 5, note: 'unscored' }));
+        analysis = await analyzeVideoContent({
+          transcript,
+          videoTitle,
+          styleHint,
+          presetKeys: Object.keys(CREATOR_PRESETS)
+        });
+      } catch (anErr) {
+        console.warn('[AI Thumbnail AI-Gen] On-the-fly analysis failed, proceeding with sparse context:', anErr.message);
+        analysis = { tags: [], emotion: 'engaging', context: '', hookTopic: '', suggestedPresetKeys: [presetKey] };
       }
-    } catch (extractErr) {
-      console.error('[AI Thumbnail AI-Gen] Frame extraction failed:', extractErr.message);
-      return res.status(500).json({ success: false, message: 'Could not extract frames: ' + extractErr.message });
     }
 
-    // Stage 3: pick top N
-    const chosenFrames = pickTopFrames(scoredFrames, requestedCount);
-
-    // Title generation: 1-4 word ALL CAPS hooks, one per chosen frame.
-    // We pass the frame's "note" as scene context to GPT-4o-mini so the hook
-    // is grounded in what the frame actually shows.
-    let titles = [];
+    // Generate concepts
+    let conceptResult;
     try {
-      const sceneNotes = chosenFrames.map((f, i) => `Frame ${i+1} (${f.timestamp.toFixed(1)}s): ${f.note}`).join('\n');
-      const safeTranscript = (transcript || '').slice(0, 6000);
-      const titleSystem = 'You write punchy, high-CTR YouTube thumbnail titles. For each of the ' + chosenFrames.length + ' frames listed, write ONE hook title — 1 to 4 words, ALL CAPS, curiosity-driving, NOT the video title. Examples: UNREAL!, ZOOM HACK, BORING VS PRO, THE TRUTH, $1 vs $1M.\n\nReturn JSON shaped EXACTLY as: { "hookTopic": "...", "titles": ["TITLE 1", "TITLE 2", ...] } with one title per frame in order.';
-      const titleUser = 'Video title: ' + (videoTitle || '(unknown)') + '\nUser style hint: ' + (styleHint || '(none)') + '\n\nFrames:\n' + sceneNotes + '\n\nTranscript (may be truncated):\n"""\n' + (safeTranscript || '(no transcript)') + '\n"""';
-      const resp = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        temperature: 0.85,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: titleSystem },
-          { role: 'user', content: titleUser }
-        ]
+      conceptResult = await generateSyntheticConcepts({
+        transcript,
+        hint: styleHint,
+        videoTitle,
+        count: requestedCount,
+        preset,
+        hasFace,
+        analysis
       });
-      const raw = resp.choices && resp.choices[0] && resp.choices[0].message && resp.choices[0].message.content;
-      const parsed = raw ? JSON.parse(raw) : {};
-      titles = Array.isArray(parsed.titles) ? parsed.titles : [];
-      var hookTopicEarly = String(parsed.hookTopic || '').slice(0, 160);
-    } catch (titleErr) {
-      console.warn('[AI Thumbnail AI-Gen] Title generation failed, using fallbacks:', titleErr.message);
+    } catch (conErr) {
+      console.error('[AI Thumbnail AI-Gen] Synthetic concept generation failed:', conErr.message);
+      return res.status(500).json({ success: false, message: 'Could not generate thumbnail concepts: ' + conErr.message });
     }
-    // Ensure we have one title per frame (fallback to generic)
-    while (titles.length < chosenFrames.length) titles.push('WATCH THIS');
-    const hookTopic = (typeof hookTopicEarly !== 'undefined' && hookTopicEarly) || (videoTitle || '').slice(0, 80);
+    const hookTopic = conceptResult.hookTopic || (analysis && analysis.hookTopic) || (videoTitle || '').slice(0, 80);
 
-    // Stage 4 + 5 + 2: for each chosen frame:
-    //   (a) optionally face-swap user's headshot onto the creator
-    //   (b) if the frame had a detected face, segment the creator from bg
-    //   (c) composite via renderFrameBasedComposite (multi-layer when mask present)
+    // Render each concept in parallel. Promise.allSettled so a single
+    // Flux/InstantID failure doesn't tank the whole request.
     const jobId = uuidv4().slice(0, 10);
-    const results = await Promise.allSettled(chosenFrames.map(async (frame, index) => {
-      let composeFrame = frame.path;
-      let swapped = false;
-      let creatorMaskPath = null;
-      let segmented = false;
-
-      // Stage 5 — face-swap first so the segmentation captures the swapped face
+    const results = await Promise.allSettled(conceptResult.concepts.map(async (concept, index) => {
+      let bgPath;
+      let usedFace = false;
       if (hasFace && faceFile && fs.existsSync(faceFile.path)) {
         try {
-          composeFrame = await runFaceSwap(frame.path, faceFile.path);
-          swapped = true;
-        } catch (swapErr) {
-          console.warn('[AI Thumbnail AI-Gen] face-swap failed on frame ' + index + ', using original:', swapErr.message);
+          bgPath = await generateSyntheticWithFace({ concept, preset, aspect, jobId, index, facePath: faceFile.path });
+          usedFace = true;
+        } catch (faceErr) {
+          console.warn('[AI Thumbnail AI-Gen] InstantID failed for concept ' + index + ', falling back to faceless synthesis:', faceErr.message);
+          bgPath = await generateSyntheticBg({ concept, preset, aspect, jobId, index });
         }
+      } else {
+        bgPath = await generateSyntheticBg({ concept, preset, aspect, jobId, index });
       }
 
-      // Stage 2 — creator segmentation (only when there's likely a face to
-      // avoid wasting a Replicate call on frames with no human). GPT-4o-mini
-      // sets facePresent unreliably, so use emotionScore as the robust signal:
-      // any non-trivial emotion score (>3) implies the model saw a face.
-      if (frame.facePresent || (frame.emotionScore || 0) > 3) {
-        try {
-          creatorMaskPath = await extractCreatorFromFrame(composeFrame);
-          segmented = true;
-        } catch (segErr) {
-          console.warn('[AI Thumbnail AI-Gen] creator segmentation failed on frame ' + index + ', falling back to single-layer:', segErr.message);
-        }
-      }
-
-      const filename = 'hc-thumb-' + jobId + '-' + index + '.png';
+      const filename = 'syn-thumb-' + jobId + '-' + index + '.png';
       const outputPath = path.join(outputDir, filename);
+      // Reuse renderFrameBasedComposite in its single-layer mode (no
+      // creatorMaskPath) — it just enhances + burns the title.
       await renderFrameBasedComposite({
-        framePath: composeFrame,
-        creatorMaskPath,
-        title: titles[index],
+        framePath: bgPath,
+        creatorMaskPath: null,
+        title: concept.title,
         preset,
         outputPath
       });
+      try { fs.unlinkSync(bgPath); } catch (e) {}
+
       return {
         filename,
-        title: titles[index],
-        timestamp: frame.timestamp,
-        scores: { overall: frame.overall, emotion: frame.emotionScore, contrast: frame.contrastScore, composition: frame.compositionScore },
-        sceneNote: frame.note,
-        faceSwapped: swapped,
-        creatorSegmented: segmented
+        title: concept.title,
+        angle: concept.angle,
+        heroSubject: concept.heroSubject,
+        emotion: concept.emotion,
+        palette: concept.palette,
+        prompt: concept.fullPrompt,
+        usedFace
       };
     }));
 
@@ -5197,14 +5336,16 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
       if (r.status === 'fulfilled') {
         thumbnails.push({
           filename: r.value.filename,
-          outputType: 'Generated Thumbnail',
+          outputType: 'AI Synthesis',
           title: r.value.title,
-          timestamp: r.value.timestamp,
-          sceneNote: r.value.sceneNote,
-          scores: r.value.scores,
-          faceSwapped: r.value.faceSwapped,
-          creatorSegmented: r.value.creatorSegmented,
-          preset: preset.key
+          angle: r.value.angle,
+          heroSubject: r.value.heroSubject,
+          emotion: r.value.emotion,
+          palette: r.value.palette,
+          faceSwapped: r.value.usedFace,
+          creatorSegmented: false,
+          preset: preset.key,
+          prompt: r.value.prompt
         });
       } else {
         failures.push({ index: i, error: r.reason && r.reason.message ? r.reason.message : String(r.reason) });
@@ -5219,25 +5360,6 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     }
 
     featureUsageOps.log(req.user.id, 'ai_thumbnails_ai').catch(() => {});
-
-    // Library — log each AI-generated thumbnail so it shows up under
-    // the 'Thumbnails' tab on /repurpose/history. kind:'image' so the
-    // card grid renders as <img>. Fire-and-forget — failures here
-    // never block the response.
-    try {
-      const { recordRender } = require('../utils/renderRecorder');
-      thumbnails.forEach(function(t) {
-        const absPath = path.join(outputDir, t.filename);
-        recordRender(req.user.id, {
-          tool: 'ai-thumbnail',
-          kind: 'image',
-          absPath: absPath,
-          title: (t.title || 'AI Thumbnail') + (hookTopic ? ' — ' + hookTopic : ''),
-          metadata: { preset: preset.key, aspect: aspect, hookTopic: hookTopic, source: 'ai-generate' }
-        }).catch(function(e){ console.warn('[ai-thumbnail ai-generate] recordRender:', e && e.message); });
-      });
-    } catch (recErr) { console.warn('[ai-thumbnail ai-generate] recordRender require failed:', recErr.message); }
-
     res.json({
       success: true,
       thumbnails,
