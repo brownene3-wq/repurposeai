@@ -6388,6 +6388,242 @@ router.get('/clip/debug', requireAuth, (req, res) => {
     res.json({ error: err.message, clips_dir: CLIPS_DIR });
   }
 });
+// === Narration v2 metadata ============================================
+// Per-style intensity options + system-prompt fragments. Used by both
+// the modal (to populate intensity selectors) and the /narrate route
+// (to feed GPT the right tone instruction).
+const NARRATION_STYLE_META = {
+  funny: {
+    label: 'Funny',
+    icon: '\u{1F602}',
+    intensities: [
+      { id: 'lightly_playful', label: 'Lightly playful', prompt: 'Keep it subtle and gently witty — one quick joke max.' },
+      { id: 'classic',         label: 'Classic comedic', prompt: 'Standard comedic delivery — punchlines and timing matter.' },
+      { id: 'bold',            label: 'Bold comedic',    prompt: 'Go all-in on the joke. Big energy, surprising punchline, no holding back.' }
+    ]
+  },
+  documentary: {
+    label: 'Documentary',
+    icon: '\u{1F3AC}',
+    intensities: [
+      { id: 'observational',   label: 'Observational',   prompt: 'Calm, observational voice. Let the content speak for itself.' },
+      { id: 'authoritative',   label: 'Authoritative',   prompt: 'Confident, structured, slightly formal — like a Netflix doc.' },
+      { id: 'dramatic_nonfic', label: 'Dramatic non-fiction', prompt: 'Build narrative tension. Use pauses. Stakes feel real.' }
+    ]
+  },
+  dramatic: {
+    label: 'Dramatic',
+    icon: '\u{1F3AD}',
+    intensities: [
+      { id: 'restrained', label: 'Restrained',  prompt: 'Hold back. Let small details carry weight.' },
+      { id: 'intense',    label: 'Intense',     prompt: 'Charge the room. Direct, urgent, no fluff.' },
+      { id: 'theatrical', label: 'Theatrical',  prompt: 'Lean into the drama. Big phrases, deliberate pacing.' }
+    ]
+  },
+  hype: {
+    label: 'Hype',
+    icon: '\u{1F525}',
+    intensities: [
+      { id: 'steady_energy', label: 'Steady energy', prompt: 'Sustained high energy without screaming.' },
+      { id: 'peak_hype',     label: 'Peak hype',     prompt: 'Build to a roar. Short sentences. ALL CAPS moments.' },
+      { id: 'max_intensity', label: 'Max intensity', prompt: 'Go full sports-announcer. Every word matters. Big.' }
+    ]
+  },
+  sarcastic: {
+    label: 'Sarcastic',
+    icon: '\u{1F60F}',
+    intensities: [
+      { id: 'dry',      label: 'Dry',      prompt: 'Bone-dry delivery. Let the audience catch it.' },
+      { id: 'biting',   label: 'Biting',   prompt: 'Sharper edge, more obvious irony.' },
+      { id: 'deadpan',  label: 'Deadpan',  prompt: 'Completely flat. No inflection. Comedy through contrast.' }
+    ]
+  },
+  storytime: {
+    label: 'Storytime',
+    icon: '\u{1F4D6}',
+    intensities: [
+      { id: 'conversational', label: 'Conversational', prompt: 'Like telling a friend at a coffee shop.' },
+      { id: 'intimate',       label: 'Intimate',       prompt: 'Quieter, slower, draws the listener in.' },
+      { id: 'theatrical',     label: 'Theatrical',     prompt: 'Audiobook-narrator vibes — characters, pauses, voices.' }
+    ]
+  },
+  news: {
+    label: 'News',
+    icon: '\u{1F4FA}',
+    intensities: [
+      { id: 'neutral',  label: 'Neutral',  prompt: 'Clean anchor-desk delivery. No opinion.' },
+      { id: 'breaking', label: 'Breaking', prompt: 'Urgent, present-tense, the story is unfolding NOW.' },
+      { id: 'somber',   label: 'Somber',   prompt: 'Reflective, slower, weight on every word.' }
+    ]
+  },
+  poetic: {
+    label: 'Poetic',
+    icon: '\u{1F4DD}',
+    intensities: [
+      { id: 'whispered',  label: 'Whispered',  prompt: 'Quiet, breathy, almost in the listener\u2019s ear.' },
+      { id: 'lyrical',    label: 'Lyrical',    prompt: 'Musical cadence. Imagery-driven. Rhythmic.' },
+      { id: 'declamatory',label: 'Declamatory',prompt: 'Spoken-word performance. Bold imagery, strong meter.' }
+    ]
+  }
+};
+function _styleIntensityPrompt(style, intensityId) {
+  const meta = NARRATION_STYLE_META[style];
+  if (!meta) return '';
+  const found = meta.intensities.find(x => x.id === intensityId) || meta.intensities[1];
+  return found ? found.prompt : '';
+}
+
+// Narration Direction presets — additional system-prompt fragments
+// that nudge the AI toward a specific narrative shape. Independent of
+// style, so a 'Funny / Bold' clip can ALSO be directed to 'Hook in 3s'.
+const NARRATION_DIRECTIONS = {
+  auto:          { label: 'Auto — let AI decide', prompt: '' },
+  hook_first:    { label: 'Hook viewer in first 3 seconds', prompt: 'OPEN with a punchy hook in the first sentence. Make scroll-stopping the priority over context.' },
+  build_curio:   { label: 'Build curiosity then reveal',    prompt: 'OPEN with a question or setup. WITHHOLD the payoff until the final 3 seconds. End with the reveal.' },
+  one_insight:   { label: 'Drive home a single insight',    prompt: 'Pick the SINGLE strongest takeaway and structure the entire narration around it. Repeat it twice with different framings.' },
+  emotional:     { label: 'Make it emotional and personal', prompt: 'Use second person (you/your). Speak to a personal moment the viewer might recognize. Warmth over wit.' },
+  counterintuit: { label: 'Sound surprising and counterintuitive', prompt: 'Lead with what seems obvious, then flip it. Use phrases like "actually", "wait", "the opposite is true".' },
+  informational: { label: 'Informative and structured',     prompt: 'Use clear discourse markers — first, then, finally. Prioritize information density over performance.' }
+};
+function _directionPrompt(directionId) {
+  const dir = NARRATION_DIRECTIONS[directionId] || NARRATION_DIRECTIONS.auto;
+  return dir.prompt || '';
+}
+
+// OpenAI TTS catalog — used by the voice picker + sample endpoint.
+// 6 built-in voices, each tagged with a description so users can
+// pick by vibe instead of name.
+const OPENAI_VOICES = [
+  { voice_id: 'alloy',   name: 'Alloy',   description: 'Neutral, balanced. Good default.' },
+  { voice_id: 'echo',    name: 'Echo',    description: 'Mid-range male. Warm and steady.' },
+  { voice_id: 'fable',   name: 'Fable',   description: 'British male. Energetic and clear.' },
+  { voice_id: 'onyx',    name: 'Onyx',    description: 'Deep male. Authoritative documentary.' },
+  { voice_id: 'nova',    name: 'Nova',    description: 'Mid-range female. Bright and clear.' },
+  { voice_id: 'shimmer', name: 'Shimmer', description: 'Female. Warm storytelling voice.' }
+];
+
+// GET /voice-catalog — returns the full picker payload: OpenAI built-in
+// voices, plus the user's ElevenLabs voices if they have a key set.
+router.get('/voice-catalog', requireAuth, async (req, res) => {
+  try {
+    const out = {
+      openai: OPENAI_VOICES,
+      elevenlabs: [],
+      styles: NARRATION_STYLE_META,
+      directions: NARRATION_DIRECTIONS
+    };
+    try {
+      const brandKit = await brandKitOps.getByUserId(req.user.id);
+      const apiKey = brandKit && brandKit.elevenlabs_api_key;
+      if (apiKey) {
+        const elResp = await fetch('https://api.elevenlabs.io/v1/voices', {
+          headers: { 'xi-api-key': apiKey }
+        });
+        if (elResp.ok) {
+          const data = await elResp.json();
+          out.elevenlabs = (data.voices || []).map(v => ({
+            voice_id: v.voice_id,
+            name: v.name,
+            description: (v.labels && (v.labels.description || v.labels.use_case)) || (v.category || 'Custom voice')
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('[voice-catalog] ElevenLabs fetch failed:', e.message);
+    }
+    res.json(out);
+  } catch (err) {
+    console.error('voice-catalog error:', err);
+    res.status(500).json({ error: 'Failed to load voice catalog' });
+  }
+});
+
+// POST /narrate-sample — Returns a 5-second TTS sample for a (provider,
+// voiceId, style, intensity) tuple. Cached per-key in R2 so repeat
+// plays + the deploy-time pre-render only pay the TTS cost once.
+// Body: { provider, voiceId, style, intensity }
+const NARRATION_SAMPLE_SCRIPTS = {
+  funny:        'Wait, hold on, you have got to hear this part, it is wild.',
+  documentary:  'What happened next would change everything about how we understood the moment.',
+  dramatic:     'And in that single instant, everything was different. Nothing the same again.',
+  hype:         'Three. Two. One. Let\u2019s go. This is what you came for, right now.',
+  sarcastic:    'Oh, perfect. Yes, that is exactly what we all needed today. Genius move.',
+  storytime:    'So picture this. It is late, the lights are low, and nobody saw it coming.',
+  news:         'Breaking now: developments on the story we have been following all morning.',
+  poetic:       'A whispered breath, a turning page. The quiet weight of what comes next.'
+};
+router.post('/narrate-sample', requireAuth, async (req, res) => {
+  try {
+    const { provider, voiceId, style, intensity } = req.body || {};
+    if (!provider || !voiceId || !style) {
+      return res.status(400).json({ error: 'provider, voiceId, and style are required' });
+    }
+    const text = NARRATION_SAMPLE_SCRIPTS[style] || NARRATION_SAMPLE_SCRIPTS.funny;
+    const safeIntensity = (intensity || 'classic').replace(/[^a-z0-9_]/gi, '');
+    const key = `narration-samples/${provider}/${encodeURIComponent(voiceId)}/${style}_${safeIntensity}.mp3`;
+    // 1) R2 cache hit?
+    try {
+      if (r2.isConfigured()) {
+        const got = await r2.getObject(key);
+        const body = Buffer.isBuffer(got) ? got : (got && got.ok ? got.body : null);
+        if (body && body.length > 1024) {
+          res.setHeader('Content-Type', 'audio/mpeg');
+          res.setHeader('Cache-Control', 'private, max-age=86400');
+          return res.end(body);
+        }
+      }
+    } catch (e) {
+      console.warn('[narrate-sample] R2 cache read failed:', e.message);
+    }
+    // 2) Live generate via the provider.
+    let mp3 = null;
+    if (provider === 'openai') {
+      const validVoices = OPENAI_VOICES.map(v => v.voice_id);
+      if (!validVoices.includes(voiceId)) {
+        return res.status(400).json({ error: 'Invalid OpenAI voice' });
+      }
+      const speech = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: voiceId,
+        input: text
+      });
+      mp3 = Buffer.from(await speech.arrayBuffer());
+    } else if (provider === 'elevenlabs') {
+      const brandKit = await brandKitOps.getByUserId(req.user.id);
+      const apiKey = brandKit && brandKit.elevenlabs_api_key;
+      if (!apiKey) {
+        return res.status(412).json({ error: 'ElevenLabs API key not configured. Add it in Settings.' });
+      }
+      const elResp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+        method: 'POST',
+        headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, model_id: 'eleven_turbo_v2_5' })
+      });
+      if (!elResp.ok) {
+        const tx = await elResp.text().catch(() => '');
+        return res.status(502).json({ error: 'ElevenLabs TTS failed: ' + tx.slice(0, 200) });
+      }
+      mp3 = Buffer.from(await elResp.arrayBuffer());
+    } else {
+      return res.status(400).json({ error: 'Unknown provider: ' + provider });
+    }
+    // 3) Cache the result for next time.
+    try {
+      if (r2.isConfigured() && mp3 && mp3.length > 1024) {
+        await r2.putObject(key, mp3, 'audio/mpeg');
+      }
+    } catch (e) {
+      console.warn('[narrate-sample] R2 cache write failed:', e.message);
+    }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    return res.end(mp3);
+  } catch (err) {
+    console.error('narrate-sample error:', err);
+    res.status(500).json({ error: err.message || 'Sample generation failed' });
+  }
+});
+
 // POST /narrate - Generate narration for a clip
 router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async (req, res) => {
   try {
@@ -6397,8 +6633,14 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
     }
 
 
-    const { analysisId, momentIndex, narrationStyle, voiceEnabled, audioMix, clipFilename,
-            ttsProvider, elevenlabsVoiceId } = req.body;
+    const {
+      analysisId, momentIndex, narrationStyle, voiceEnabled, audioMix, clipFilename,
+      ttsProvider, elevenlabsVoiceId,
+      // v2 params (all optional — defaults preserve v1 behavior)
+      narrationIntensity, narrationDirection,
+      narrationLevel, originalLevel, loudnessTarget,
+      openaiVoiceId
+    } = req.body;
 
     // Validate inputs
     if (!analysisId || momentIndex === undefined || !narrationStyle || !clipFilename) {
@@ -6409,6 +6651,16 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
     if (!validStyles.includes(narrationStyle)) {
       return res.status(400).json({ error: `Invalid narration style. Must be one of: ${validStyles.join(', ')}` });
     }
+    // Numeric levels — clamp 0..1 so a malicious client can't pass NaN
+    // or huge numbers. Defaults match v1: narration 100%, original 30%.
+    const _narrLvl = Math.max(0, Math.min(1, Number(narrationLevel)));
+    const _origLvl = Math.max(0, Math.min(1, Number(originalLevel)));
+    const NARR_LVL = Number.isFinite(_narrLvl) ? _narrLvl : 1.0;
+    const ORIG_LVL = Number.isFinite(_origLvl) ? _origLvl : (audioMix === 'replace' ? 0 : 0.3);
+    // Loudness target — broadcast (-16), streaming (-14), loud (-10).
+    // Maps to ffmpeg's loudnorm I=value.
+    const validLoudness = ['-16', '-14', '-10'];
+    const LOUD_TGT = validLoudness.includes(String(loudnessTarget)) ? String(loudnessTarget) : '-14';
 
     // Get analysis
     const analysis = await shortsOps.getById(analysisId);
@@ -6553,7 +6805,11 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
         };
 
         const systemPrompt = `You are a creative narration writer for short-form video content. Write engaging, authentic voiceover scripts that match the specified style. Write only spoken words — no emojis, no hashtags, no stage directions, no quotation marks. The text will be read aloud by a text-to-speech voice.`;
-        const userPrompt = `${stylePrompts[narrationStyle]}\n\nBased on this video transcript excerpt: ${transcriptExcerpt}`;
+        // v2: intensity + direction modifiers stack on top of the base style.
+        const intensityFragment = _styleIntensityPrompt(narrationStyle, narrationIntensity);
+        const directionFragment = _directionPrompt(narrationDirection);
+        const v2Mods = [intensityFragment, directionFragment].filter(Boolean).join(' ');
+        const userPrompt = `${stylePrompts[narrationStyle]}${v2Mods ? '\n\nADDITIONAL DIRECTION: ' + v2Mods : ''}\n\nBased on this video transcript excerpt: ${transcriptExcerpt}`;
 
         const narrationResponse = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
@@ -6620,12 +6876,16 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
               fs.writeFileSync(audioPath, buffer);
               console.log(`  ElevenLabs audio generated: ${audioPath} (${buffer.length} bytes)`);
             } else {
-              // OpenAI TTS (default)
-              let voiceName = 'nova';
-              if (narrationStyle === 'documentary' || narrationStyle === 'news') voiceName = 'onyx';
-              else if (narrationStyle === 'storytime' || narrationStyle === 'poetic') voiceName = 'shimmer';
-              else if (narrationStyle === 'dramatic') voiceName = 'echo';
-              else if (narrationStyle === 'hype') voiceName = 'fable';
+              // OpenAI TTS — prefer the explicitly-picked voice; fall
+              // back to the style-based map for v1 compatibility.
+              let voiceName = openaiVoiceId && OPENAI_VOICES.find(v => v.voice_id === openaiVoiceId) ? openaiVoiceId : null;
+              if (!voiceName) {
+                voiceName = 'nova';
+                if (narrationStyle === 'documentary' || narrationStyle === 'news') voiceName = 'onyx';
+                else if (narrationStyle === 'storytime' || narrationStyle === 'poetic') voiceName = 'shimmer';
+                else if (narrationStyle === 'dramatic') voiceName = 'echo';
+                else if (narrationStyle === 'hype') voiceName = 'fable';
+              }
 
               const speech = await openai.audio.speech.create({
                 model: 'tts-1',
@@ -6651,37 +6911,27 @@ router.post('/narrate', requireAuth, checkPlanLimit('narrationsPerMonth'), async
         if (voiceEnabled && audioPath) {
           // Add audio to video (mix or replace)
         try {
-          if (audioMix === 'replace') {
-            // Replace: discard original audio, use only narration
-            // Stream-copy video, transcode only audio. The clip is
-            // already H.264 yuv420p from /shorts/clip so a re-encode
-            // is pure waste on Railway CPU.
-            await runCommand(ffmpegPath, [
-              '-i', clipPath, '-i', audioPath,
-              '-map', '0:v', '-map', '1:a',
-              '-c:v', 'copy',
-              '-c:a', 'aac', '-b:a', '128k',
-              '-movflags', '+faststart',
-              '-shortest', '-y', tempOutput
-            ], { timeout: 120000 });
-          } else {
-            // Mix: blend original audio (30%) with narration
-            // Stream-copy video; filter_complex only touches audio.
-            // Explicit -map for both streams is required when mixing
-            // -c:v copy with -filter_complex — ffmpeg's auto-mapping
-            // sometimes drops one of them and produces a 'no audio' or
-            // 'no output streams selected' failure. Naming the amix
-            // output [aout] and mapping 0:v + [aout] is unambiguous.
-            await runCommand(ffmpegPath, [
-              '-i', clipPath, '-i', audioPath,
-              '-filter_complex', '[0:a]volume=0.3[orig];[1:a]volume=1[narr];[orig][narr]amix=inputs=2:duration=longest[aout]',
-              '-map', '0:v', '-map', '[aout]',
-              '-c:v', 'copy',
-              '-c:a', 'aac', '-b:a', '128k',
-              '-movflags', '+faststart',
-              '-shortest', '-y', tempOutput
-            ], { timeout: 120000 });
-          }
+          // v2 audio mix — combine narration + original at user-set
+          // levels, then loudness-normalize to the user's target.
+          // ORIG_LVL=0 collapses to a 'replace' (only narration);
+          // ORIG_LVL>0 mixes the two streams. A final loudnorm pass
+          // hits the broadcast/streaming/loud target so every clip
+          // exports at consistent volume regardless of TTS provider.
+          const _narr = NARR_LVL.toFixed(2);
+          const _orig = ORIG_LVL.toFixed(2);
+          const filterChain = ORIG_LVL <= 0.001
+            ? `[1:a]volume=${_narr},loudnorm=I=${LOUD_TGT}:TP=-1.5:LRA=11[aout]`
+            : `[0:a]volume=${_orig}[orig];[1:a]volume=${_narr}[narr];[orig][narr]amix=inputs=2:duration=longest,loudnorm=I=${LOUD_TGT}:TP=-1.5:LRA=11[aout]`;
+          console.log('[narrate] mix filter:', filterChain);
+          await runCommand(ffmpegPath, [
+            '-i', clipPath, '-i', audioPath,
+            '-filter_complex', filterChain,
+            '-map', '0:v', '-map', '[aout]',
+            '-c:v', 'copy',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart',
+            '-shortest', '-y', tempOutput
+          ], { timeout: 120000 });
           } catch (ffErr) {
             clearTimeout(timeout);
             writeError(`ffmpeg audio processing failed: ${ffErr.message}`);
@@ -9533,53 +9783,113 @@ ${paginationHtml}
   </div>
 
   <!-- Narration Modal -->
-  <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
-    <div style="background:var(--surface);border-radius:16px;padding:28px;max-width:520px;width:90%;margin:auto;position:relative;max-height:90vh;overflow-y:auto;">
-      <button onclick="closeNarrationModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;">&times;</button>
+  <div id="narrationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:flex-start;justify-content:center;backdrop-filter:blur(4px);overflow-y:auto;padding:24px 12px;">
+    <div style="background:var(--surface);border-radius:16px;padding:24px;max-width:720px;width:100%;margin:auto;position:relative;">
+      <button onclick="closeNarrationModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;z-index:2;">&times;</button>
       <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;"><img src="/images/section-icons/A-78.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Narration</h2>
-      <p style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">Add a voiceover or text narration to your clip</p>
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;">Add a voiceover narration with full creative control.</p>
 
-      <div style="margin-bottom:16px;">
+      <!-- Persistent preview area — stays at the top while users
+           adjust settings below. Shows the duration estimate +
+           pacing warning live as choices change. -->
+      <div id="narration-preview-area" style="background:linear-gradient(180deg,rgba(108,58,237,0.08),rgba(236,72,153,0.04));border:1px solid rgba(108,58,237,0.30);border-radius:12px;padding:14px 16px;margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div style="min-width:0;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#a78bfa;text-transform:uppercase;margin-bottom:4px;">Live preview</div>
+            <div id="narration-preview-summary" style="font-size:13px;color:var(--text);font-weight:600;">Funny — Classic comedic · OpenAI Nova · Mix</div>
+          </div>
+          <div style="text-align:right;">
+            <div id="narration-preview-duration" style="font-size:13px;color:var(--text);font-weight:700;">~ — sec narration</div>
+            <div id="narration-preview-clip-len" style="font-size:11px;color:var(--text-dim);">Clip duration: — sec</div>
+          </div>
+        </div>
+        <div id="narration-pacing-warning" style="display:none;margin-top:10px;font-size:12px;color:#fbbf24;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.30);border-radius:8px;padding:8px 10px;font-weight:600;">
+          <span aria-hidden="true">\u26A0</span> <span id="narration-pacing-warning-text">Pacing will be tight.</span>
+        </div>
+      </div>
+
+      <!-- Style picker -->
+      <div style="margin-bottom:14px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Style</label>
         <div id="narration-styles" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-          <button class="narr-style-btn" data-style="funny" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😂<br>Funny</button>
-          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Documentary</button>
-          <button class="narr-style-btn" data-style="dramatic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-88.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Dramatic</button>
-          <button class="narr-style-btn" data-style="hype" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">🔥<br>Hype</button>
-          <button class="narr-style-btn" data-style="sarcastic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">😏<br>Sarcastic</button>
-          <button class="narr-style-btn" data-style="storytime" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📖<br>Storytime</button>
-          <button class="narr-style-btn" data-style="news" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">📺<br>News</button>
-          <button class="narr-style-btn" data-style="poetic" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;"><img src="/images/section-icons/A-93.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"><br>Poetic</button>
+          <button class="narr-style-btn" data-style="funny"       style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F602}<br>Funny</button>
+          <button class="narr-style-btn" data-style="documentary" style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F3AC}<br>Documentary</button>
+          <button class="narr-style-btn" data-style="dramatic"    style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F3AD}<br>Dramatic</button>
+          <button class="narr-style-btn" data-style="hype"        style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F525}<br>Hype</button>
+          <button class="narr-style-btn" data-style="sarcastic"   style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F60F}<br>Sarcastic</button>
+          <button class="narr-style-btn" data-style="storytime"   style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F4D6}<br>Storytime</button>
+          <button class="narr-style-btn" data-style="news"        style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F4FA}<br>News</button>
+          <button class="narr-style-btn" data-style="poetic"      style="padding:10px 6px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;text-align:center;transition:all .2s;">\u{1F4DD}<br>Poetic</button>
         </div>
       </div>
 
-      <div style="margin-bottom:16px;">
+      <!-- Intensity sub-picker — populated by JS based on selected style -->
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Intensity</label>
+        <div id="narration-intensities" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- Narration Direction preset -->
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Narration Direction</label>
+        <select id="narration-direction-select" style="width:100%;padding:9px 12px;background:var(--surface-light);color:var(--text);border:1px solid rgba(255,255,255,0.10);border-radius:8px;font-size:12px;">
+          <!-- populated by JS -->
+        </select>
+      </div>
+
+      <!-- Voice Type: AI Voice / Text Only -->
+      <div style="margin-bottom:14px;">
         <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Type</label>
         <div style="display:flex;gap:8px;">
-          <button id="voice-type-ai" class="voice-type-btn active" onclick="setVoiceType('ai')" style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
-          <button id="voice-type-text" class="voice-type-btn" onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Only</button>
+          <button id="voice-type-ai"   class="voice-type-btn active" onclick="setVoiceType('ai')"   style="flex:1;padding:10px;border-radius:10px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-81.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> AI Voice</button>
+          <button id="voice-type-text" class="voice-type-btn"        onclick="setVoiceType('text')" style="flex:1;padding:10px;border-radius:10px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;"><img src="/images/section-icons/A-84.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Text Only</button>
         </div>
       </div>
 
-      <div id="voice-options" style="margin-bottom:16px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice Provider</label>
+      <!-- Voice picker — provider tabs + per-voice cards with Play 5s -->
+      <div id="voice-options" style="margin-bottom:14px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Voice</label>
         <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <button id="provider-openai" class="provider-btn active" onclick="setProvider('openai')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #6c5ce7;background:rgba(108,92,231,0.1);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">OpenAI TTS</button>
-          <button id="provider-elevenlabs" class="provider-btn" onclick="setProvider('elevenlabs')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">ElevenLabs</button>
+          <button id="provider-openai"     class="provider-btn active" onclick="setProvider('openai')"     style="flex:1;padding:8px;border-radius:8px;border:2px solid #6c5ce7;background:rgba(108,92,231,0.1);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">OpenAI TTS</button>
+          <button id="provider-elevenlabs" class="provider-btn"         onclick="setProvider('elevenlabs')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">ElevenLabs</button>
         </div>
-        <div id="elevenlabs-voice-picker" style="display:none;">
-          <select id="elevenlabs-voice-select" style="width:100%;padding:8px 10px;background:var(--surface-light);color:var(--text);border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:12px;">
-            <option value="">Loading voices...</option>
-          </select>
-          <p style="font-size:10px;color:var(--text-dim);margin-top:4px;">Add your ElevenLabs API key in Settings to use custom voices</p>
+        <div id="voice-picker-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:260px;overflow-y:auto;padding-right:4px;">
+          <!-- populated by JS — each entry is a card with name + description + Play 5s button -->
         </div>
+        <p id="elevenlabs-empty" style="display:none;font-size:10px;color:var(--text-dim);margin-top:6px;">No ElevenLabs voices available. Add your API key in Settings.</p>
       </div>
 
-      <div id="audio-mix-options" style="margin-bottom:20px;">
-        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Audio Mix</label>
-        <div style="display:flex;gap:8px;">
-          <button id="mix-type-mix" class="mix-type-btn active" onclick="setMixType('mix')" style="flex:1;padding:8px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.1);color:var(--text);font-size:11px;cursor:pointer;"><img src="/images/section-icons/A-6.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Mix (30% original)</button>
-          <button id="mix-type-replace" class="mix-type-btn" onclick="setMixType('replace')" style="flex:1;padding:8px;border-radius:8px;border:2px solid transparent;background:var(--surface-light);color:var(--text);font-size:11px;cursor:pointer;">🔇 Replace Audio</button>
+      <!-- Pro audio mix: narration level, original level, loudness target -->
+      <div id="audio-mix-options" style="margin-bottom:18px;padding:12px;background:var(--surface-light);border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+        <label style="font-size:12px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:10px;">Pro Audio Mix</label>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:12px;color:var(--text);font-weight:600;">Narration level</span>
+              <span id="narration-level-readout" style="font-size:11px;color:var(--text-muted);font-weight:600;">100%</span>
+            </div>
+            <input id="narration-level-slider" type="range" min="0" max="100" value="100" style="width:100%;accent-color:#00b894;">
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:12px;color:var(--text);font-weight:600;">Original audio level</span>
+              <span id="original-level-readout" style="font-size:11px;color:var(--text-muted);font-weight:600;">30%</span>
+            </div>
+            <input id="original-level-slider" type="range" min="0" max="100" value="30" style="width:100%;accent-color:#6c5ce7;">
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:12px;color:var(--text);font-weight:600;">Loudness target</span>
+              <span style="font-size:10px;color:var(--text-dim);">LUFS — consistent volume across clips</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="loudness-btn" data-loud="-16" style="flex:1;padding:7px;border-radius:8px;border:2px solid transparent;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">-16 LUFS<br><span style="font-size:9px;color:var(--text-dim);font-weight:500;">Broadcast</span></button>
+              <button class="loudness-btn active" data-loud="-14" style="flex:1;padding:7px;border-radius:8px;border:2px solid #00b894;background:rgba(0,184,148,0.10);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">-14 LUFS<br><span style="font-size:9px;color:var(--text-dim);font-weight:500;">Streaming</span></button>
+              <button class="loudness-btn" data-loud="-10" style="flex:1;padding:7px;border-radius:8px;border:2px solid transparent;background:var(--surface);color:var(--text);font-size:11px;cursor:pointer;font-weight:600;">-10 LUFS<br><span style="font-size:9px;color:var(--text-dim);font-weight:500;">Loud</span></button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -13868,11 +14178,50 @@ ${paginationHtml}
       analysisId: null,
       momentIndex: null,
       style: 'funny',
+      intensity: 'classic',
+      direction: 'auto',
       voiceEnabled: true,
       provider: 'openai',
+      openaiVoiceId: 'nova',
       elevenlabsVoiceId: null,
       audioMix: 'mix',
-      clipFilename: null
+      narrationLevel: 1.0,    // 0..1
+      originalLevel: 0.3,     // 0..1
+      loudnessTarget: '-14',  // -16 broadcast / -14 streaming / -10 loud
+      clipFilename: null,
+      // v2 catalog cache (loaded on first modal open).
+      catalog: null,
+      // Per-sample audio cache so repeat plays don't re-fetch.
+      sampleAudio: {},
+      sampleAudioInflight: {}
+    };
+    // Default intensity per style (the middle option).
+    var NARRATION_STYLE_DEFAULTS = {
+      funny:       'classic',
+      documentary: 'authoritative',
+      dramatic:    'intense',
+      hype:        'peak_hype',
+      sarcastic:   'biting',
+      storytime:   'conversational',
+      news:        'neutral',
+      poetic:      'lyrical'
+    };
+    // Style-specific words-per-second baselines for duration estimation.
+    // Pulled from typical TTS pacing — calm styles speak slower.
+    var NARRATION_WPS = {
+      funny: 3.0, documentary: 2.4, dramatic: 2.2, hype: 3.4,
+      sarcastic: 2.6, storytime: 2.4, news: 3.0, poetic: 2.0
+    };
+    // Intensity tweaks the WPS by a small factor.
+    var NARRATION_INTENSITY_FACTOR = {
+      lightly_playful: 0.92, classic: 1.0,    bold: 1.10,
+      observational: 0.95,  authoritative: 1.0, dramatic_nonfic: 0.92,
+      restrained: 0.90,     intense: 1.05,  theatrical: 1.0,
+      steady_energy: 1.05,  peak_hype: 1.15, max_intensity: 1.25,
+      dry: 0.95,            biting: 1.0,    deadpan: 0.90,
+      conversational: 1.0,  intimate: 0.90, theatrical_narrator: 0.95,
+      neutral: 1.0,         breaking: 1.10, somber: 0.85,
+      whispered: 0.85,      lyrical: 0.95,  declamatory: 1.0
     };
 
     // ── Narration progress ticker ────────────────────────────────────
@@ -14046,6 +14395,18 @@ ${paginationHtml}
       // Hide the don't-close warning — no work in progress yet.
       var _warnReset = document.getElementById('narration-keep-open-warning');
       if (_warnReset) _warnReset.style.display = 'none';
+      // v2 init: load catalog (cached after first call), build the
+      // intensity row + direction select + voice picker, wire sliders,
+      // and refresh the live preview.
+      loadVoiceCatalog().then(function() {
+        rebuildIntensityRow();
+        rebuildDirectionSelect();
+        rebuildVoicePicker();
+        _wireMixSliders();
+        // Make sure default loudness button visual matches state.
+        setLoudness(narrationState.loudnessTarget);
+        updateNarrationPreview();
+      });
       // IMPORTANT: do NOT kick off the clip prerender here. /shorts/clip
       // is gated by checkPlanLimit('clipsPerMonth'), so firing it the
       // moment the modal opens would consume one of the user's monthly
@@ -14127,12 +14488,17 @@ ${paginationHtml}
       if (_warnClose) _warnClose.style.display = 'none';
     }
 
-    // Style selection
+    // Style selection — also resets intensity to that style's
+    // default and rebuilds the intensity row + preview summary.
     document.querySelectorAll('.narr-style-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         narrationState.style = this.dataset.style;
+        narrationState.intensity = NARRATION_STYLE_DEFAULTS[narrationState.style] || 'classic';
         document.querySelectorAll('.narr-style-btn').forEach(function(b) { b.style.borderColor = 'transparent'; });
         this.style.borderColor = '#00b894';
+        rebuildIntensityRow();
+        rebuildVoicePicker();
+        updateNarrationPreview();
       });
     });
 
@@ -14146,43 +14512,293 @@ ${paginationHtml}
       document.getElementById('audio-mix-options').style.display = type === 'ai' ? 'block' : 'none';
     }
 
+    // Bridge from the inline onclick='setProvider(...)' to the v2 handler.
     function setProvider(provider) {
+      if (typeof setProviderV2 === 'function') return setProviderV2(provider);
+      narrationState.provider = provider;
+    }
+
+    // setMixType replaced by sliders + setLoudness in v2; left as a
+    // no-op stub for any legacy onclick that might still call it.
+    function setMixType(_type) { /* deprecated */ }
+
+    // ── v2 catalog + controllers ───────────────────────────────────
+    async function loadVoiceCatalog() {
+      if (narrationState.catalog) return narrationState.catalog;
+      try {
+        var resp = await fetch('/shorts/voice-catalog');
+        var data = await resp.json();
+        narrationState.catalog = data;
+        return data;
+      } catch (err) {
+        console.warn('voice-catalog fetch failed:', err);
+        narrationState.catalog = { openai: [], elevenlabs: [], styles: {}, directions: {} };
+        return narrationState.catalog;
+      }
+    }
+
+    function rebuildIntensityRow() {
+      var row = document.getElementById('narration-intensities');
+      if (!row) return;
+      var styleMeta = (narrationState.catalog && narrationState.catalog.styles && narrationState.catalog.styles[narrationState.style])
+        || { intensities: [{ id: 'classic', label: 'Classic' }] };
+      row.innerHTML = '';
+      styleMeta.intensities.forEach(function(intensity) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'narr-intensity-btn';
+        btn.dataset.intensity = intensity.id;
+        btn.textContent = intensity.label;
+        var isActive = intensity.id === narrationState.intensity;
+        btn.style.cssText = 'flex:1;padding:8px 10px;border-radius:8px;border:2px solid ' + (isActive ? '#00b894' : 'transparent') + ';background:' + (isActive ? 'rgba(0,184,148,0.10)' : 'var(--surface-light)') + ';color:var(--text);font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;min-width:auto;';
+        btn.addEventListener('click', function() {
+          narrationState.intensity = intensity.id;
+          rebuildIntensityRow();
+          updateNarrationPreview();
+        });
+        row.appendChild(btn);
+      });
+    }
+
+    function rebuildDirectionSelect() {
+      var sel = document.getElementById('narration-direction-select');
+      if (!sel || !narrationState.catalog) return;
+      var dirs = narrationState.catalog.directions || {};
+      sel.innerHTML = '';
+      Object.keys(dirs).forEach(function(key) {
+        var opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = dirs[key].label;
+        if (key === narrationState.direction) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.onchange = function() {
+        narrationState.direction = this.value;
+        updateNarrationPreview();
+      };
+    }
+
+    function rebuildVoicePicker() {
+      var grid = document.getElementById('voice-picker-grid');
+      var emptyMsg = document.getElementById('elevenlabs-empty');
+      if (!grid || !narrationState.catalog) return;
+      var provider = narrationState.provider;
+      var list = provider === 'openai' ? (narrationState.catalog.openai || []) : (narrationState.catalog.elevenlabs || []);
+      grid.innerHTML = '';
+      if (emptyMsg) emptyMsg.style.display = (provider === 'elevenlabs' && list.length === 0) ? 'block' : 'none';
+      list.forEach(function(voice) {
+        var isActive = (provider === 'openai')
+          ? voice.voice_id === narrationState.openaiVoiceId
+          : voice.voice_id === narrationState.elevenlabsVoiceId;
+        var card = document.createElement('div');
+        card.style.cssText = 'background:' + (isActive ? 'rgba(108,92,231,0.10)' : 'var(--surface-light)') + ';border:2px solid ' + (isActive ? '#a78bfa' : 'transparent') + ';border-radius:10px;padding:10px;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;gap:6px;';
+        card.dataset.voiceId = voice.voice_id;
+        card.addEventListener('click', function(e) {
+          // Click anywhere on the card except the Play button selects.
+          if (e.target.closest('.voice-sample-btn')) return;
+          if (provider === 'openai') narrationState.openaiVoiceId = voice.voice_id;
+          else                       narrationState.elevenlabsVoiceId = voice.voice_id;
+          rebuildVoicePicker();
+          updateNarrationPreview();
+        });
+        var name = document.createElement('div');
+        name.style.cssText = 'font-size:13px;font-weight:700;color:var(--text);';
+        name.textContent = voice.name;
+        var desc = document.createElement('div');
+        desc.style.cssText = 'font-size:11px;color:var(--text-muted);line-height:1.35;';
+        desc.textContent = voice.description || '';
+        var sampleBtn = document.createElement('button');
+        sampleBtn.type = 'button';
+        sampleBtn.className = 'voice-sample-btn';
+        sampleBtn.dataset.voiceId = voice.voice_id;
+        sampleBtn.innerHTML = '\u25B6 Play 5s sample';
+        sampleBtn.style.cssText = 'margin-top:4px;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.10);background:var(--surface);color:#a78bfa;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s;';
+        sampleBtn.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          playVoiceSample(provider, voice.voice_id, sampleBtn);
+        });
+        card.appendChild(name);
+        card.appendChild(desc);
+        card.appendChild(sampleBtn);
+        grid.appendChild(card);
+      });
+    }
+
+    var __narrationSampleAudio = null;
+    async function playVoiceSample(provider, voiceId, btn) {
+      // Stop any currently-playing sample so two clicks in a row
+      // don't double up.
+      if (__narrationSampleAudio) {
+        try { __narrationSampleAudio.pause(); } catch (_) {}
+        __narrationSampleAudio = null;
+      }
+      var key = provider + '/' + voiceId + '/' + narrationState.style + '/' + narrationState.intensity;
+      if (narrationState.sampleAudio[key]) {
+        var audio = new Audio(narrationState.sampleAudio[key]);
+        __narrationSampleAudio = audio;
+        try { audio.play(); } catch (_) {}
+        return;
+      }
+      if (narrationState.sampleAudioInflight[key]) return;
+      narrationState.sampleAudioInflight[key] = true;
+      var originalHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '\u25CF Loading...';
+      try {
+        var resp = await fetch('/shorts/narrate-sample', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: provider, voiceId: voiceId, style: narrationState.style, intensity: narrationState.intensity })
+        });
+        if (!resp.ok) {
+          var err = await resp.json().catch(function() { return { error: 'Sample failed' }; });
+          throw new Error(err.error || 'Sample failed');
+        }
+        var blob = await resp.blob();
+        var url = URL.createObjectURL(blob);
+        narrationState.sampleAudio[key] = url;
+        var audio2 = new Audio(url);
+        __narrationSampleAudio = audio2;
+        try { audio2.play(); } catch (_) {}
+      } catch (e) {
+        if (typeof showToast === 'function') showToast('Voice sample failed: ' + e.message);
+        console.warn('voice sample failed:', e);
+      } finally {
+        narrationState.sampleAudioInflight[key] = false;
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+      }
+    }
+
+    function setLoudness(target) {
+      narrationState.loudnessTarget = target;
+      document.querySelectorAll('.loudness-btn').forEach(function(b) {
+        var active = b.dataset.loud === target;
+        b.style.borderColor = active ? '#00b894' : 'transparent';
+        b.style.background = active ? 'rgba(0,184,148,0.10)' : 'var(--surface)';
+      });
+    }
+
+    function _wireMixSliders() {
+      var nLvl = document.getElementById('narration-level-slider');
+      var nOut = document.getElementById('narration-level-readout');
+      var oLvl = document.getElementById('original-level-slider');
+      var oOut = document.getElementById('original-level-readout');
+      if (nLvl) nLvl.addEventListener('input', function() {
+        narrationState.narrationLevel = Number(this.value) / 100;
+        if (nOut) nOut.textContent = this.value + '%';
+        updateNarrationPreview();
+      });
+      if (oLvl) oLvl.addEventListener('input', function() {
+        var v = Number(this.value);
+        narrationState.originalLevel = v / 100;
+        // Derive audioMix for backend compat.
+        narrationState.audioMix = v === 0 ? 'replace' : 'mix';
+        if (oOut) oOut.textContent = this.value + '%';
+        updateNarrationPreview();
+      });
+      document.querySelectorAll('.loudness-btn').forEach(function(b) {
+        b.addEventListener('click', function() { setLoudness(this.dataset.loud); updateNarrationPreview(); });
+      });
+    }
+
+    // Estimate narration duration from generated word-count target
+    // + WPS lookup. Surfaces a pacing warning when the narration
+    // would be longer than the available clip duration.
+    function updateNarrationPreview() {
+      var summary = document.getElementById('narration-preview-summary');
+      var dur = document.getElementById('narration-preview-duration');
+      var clipLen = document.getElementById('narration-preview-clip-len');
+      var warning = document.getElementById('narration-pacing-warning');
+      var warningText = document.getElementById('narration-pacing-warning-text');
+
+      // Clip duration from the active moment (start/end seconds).
+      var clipSec = 0;
+      try {
+        var analysis = window.__currentAnalysis || window.currentAnalysis || window.lastAnalysisData;
+        if (analysis && Array.isArray(analysis.moments)) {
+          var mom = analysis.moments[narrationState.momentIndex];
+          if (mom && mom.timeRange) {
+            var parts = String(mom.timeRange).split('-');
+            var parseT = function(s) {
+              var p = (s || '').trim().split(':').map(Number);
+              if (p.length === 3) return p[0]*3600 + p[1]*60 + p[2];
+              if (p.length === 2) return p[0]*60 + p[1];
+              return Number(p[0]) || 0;
+            };
+            clipSec = Math.max(0, parseT(parts[1]) - parseT(parts[0]));
+          }
+        }
+      } catch (_) {}
+
+      // Estimate narration length. GPT generates "max 4-5 sentences"
+      // for each style — assume ~12 words/sentence and 4.5 sentences
+      // typical = 54 words baseline, tuned by WPS + intensity factor.
+      var baseWords = 54;
+      var wps = NARRATION_WPS[narrationState.style] || 2.5;
+      var factor = NARRATION_INTENSITY_FACTOR[narrationState.intensity] || 1.0;
+      var estimatedSec = baseWords / (wps * factor);
+
+      // Provider + voice labels for the summary line.
+      var styleMeta = (narrationState.catalog && narrationState.catalog.styles && narrationState.catalog.styles[narrationState.style]) || { label: narrationState.style };
+      var intLabel = (styleMeta.intensities || []).find(function(x) { return x.id === narrationState.intensity; });
+      var providerLabel = narrationState.provider === 'openai' ? 'OpenAI' : 'ElevenLabs';
+      var voiceLabel = '';
+      if (narrationState.catalog) {
+        var list = narrationState.provider === 'openai' ? narrationState.catalog.openai : narrationState.catalog.elevenlabs;
+        var pickedId = narrationState.provider === 'openai' ? narrationState.openaiVoiceId : narrationState.elevenlabsVoiceId;
+        var picked = (list || []).find(function(v) { return v.voice_id === pickedId; });
+        if (picked) voiceLabel = picked.name;
+      }
+      var mixLabel = narrationState.originalLevel <= 0.01 ? 'Replace audio'
+                   : ('Mix · narr ' + Math.round(narrationState.narrationLevel * 100) + '% / orig ' + Math.round(narrationState.originalLevel * 100) + '%');
+      if (summary) {
+        summary.textContent = styleMeta.label + (intLabel ? (' — ' + intLabel.label) : '')
+          + ' · ' + providerLabel + (voiceLabel ? (' ' + voiceLabel) : '')
+          + ' · ' + mixLabel;
+      }
+      if (dur) dur.textContent = '~ ' + estimatedSec.toFixed(1) + ' sec narration';
+      if (clipLen) clipLen.textContent = clipSec ? ('Clip duration: ' + clipSec.toFixed(0) + ' sec') : 'Clip duration: —';
+
+      // Pacing warning bands.
+      if (warning && warningText) {
+        warning.style.display = 'none';
+        if (clipSec > 0) {
+          if (estimatedSec > clipSec * 1.20) {
+            warning.style.display = 'block';
+            warning.style.background = 'rgba(239,68,68,0.10)';
+            warning.style.borderColor = 'rgba(239,68,68,0.35)';
+            warning.style.color = '#fca5a5';
+            warningText.textContent = 'Narration is longer than the clip (' + estimatedSec.toFixed(1) + 's vs ' + clipSec.toFixed(0) + 's). Pacing will sound rushed or the clip will hold an empty tail.';
+          } else if (estimatedSec > clipSec * 0.95) {
+            warning.style.display = 'block';
+            warning.style.background = 'rgba(251,191,36,0.10)';
+            warning.style.borderColor = 'rgba(251,191,36,0.35)';
+            warning.style.color = '#fbbf24';
+            warningText.textContent = 'Pacing will be tight (' + estimatedSec.toFixed(1) + 's narration in ' + clipSec.toFixed(0) + 's clip). Consider a lower-intensity option.';
+          } else if (estimatedSec < clipSec * 0.40) {
+            warning.style.display = 'block';
+            warning.style.background = 'rgba(108,92,231,0.10)';
+            warning.style.borderColor = 'rgba(108,92,231,0.30)';
+            warning.style.color = '#a78bfa';
+            warningText.textContent = 'Narration is short relative to the clip. Original audio will fill the gaps.';
+          }
+        }
+      }
+    }
+
+    // setProvider was redefined above — keep this one as the canonical.
+    function setProviderV2(provider) {
       narrationState.provider = provider;
       document.getElementById('provider-openai').style.borderColor = provider === 'openai' ? '#6c5ce7' : 'transparent';
       document.getElementById('provider-openai').style.background = provider === 'openai' ? 'rgba(108,92,231,0.1)' : 'var(--surface-light)';
       document.getElementById('provider-elevenlabs').style.borderColor = provider === 'elevenlabs' ? '#6c5ce7' : 'transparent';
       document.getElementById('provider-elevenlabs').style.background = provider === 'elevenlabs' ? 'rgba(108,92,231,0.1)' : 'var(--surface-light)';
-      document.getElementById('elevenlabs-voice-picker').style.display = provider === 'elevenlabs' ? 'block' : 'none';
-      if (provider === 'elevenlabs') loadElevenLabsVoices();
+      rebuildVoicePicker();
+      updateNarrationPreview();
     }
-
-    function setMixType(type) {
-      narrationState.audioMix = type;
-      document.getElementById('mix-type-mix').style.borderColor = type === 'mix' ? '#00b894' : 'transparent';
-      document.getElementById('mix-type-mix').style.background = type === 'mix' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
-      document.getElementById('mix-type-replace').style.borderColor = type === 'replace' ? '#00b894' : 'transparent';
-      document.getElementById('mix-type-replace').style.background = type === 'replace' ? 'rgba(0,184,148,0.1)' : 'var(--surface-light)';
-    }
-
-    async function loadElevenLabsVoices() {
-      var select = document.getElementById('elevenlabs-voice-select');
-      select.innerHTML = '<option value="">Loading voices...</option>';
-      try {
-        var resp = await fetch('/shorts/elevenlabs-voices');
-        var data = await resp.json();
-        if (data.voices && data.voices.length > 0) {
-          select.innerHTML = data.voices.map(function(v) {
-            return '<option value="' + v.voice_id + '">' + v.name + ' (' + v.category + ')</option>';
-          }).join('');
-          narrationState.elevenlabsVoiceId = data.voices[0].voice_id;
-          select.onchange = function() { narrationState.elevenlabsVoiceId = this.value; };
-        } else {
-          select.innerHTML = '<option value="">No voices found — add ElevenLabs API key in Settings</option>';
-        }
-      } catch (err) {
-        select.innerHTML = '<option value="">Error loading voices</option>';
-      }
-    }
+    // Expose for inline onclick handlers in the modal HTML.
+    window.setProvider = setProviderV2;
 
     async function generateNarration() {
       var btn = document.getElementById('narrate-generate-btn');
@@ -14261,7 +14877,14 @@ ${paginationHtml}
           audioMix: narrationState.audioMix,
           clipFilename: narrationState.clipFilename,
           ttsProvider: narrationState.provider,
-          elevenlabsVoiceId: narrationState.elevenlabsVoiceId
+          elevenlabsVoiceId: narrationState.elevenlabsVoiceId,
+          // v2 fields — back-end defaults handle missing values.
+          narrationIntensity: narrationState.intensity,
+          narrationDirection: narrationState.direction,
+          narrationLevel: narrationState.narrationLevel,
+          originalLevel: narrationState.originalLevel,
+          loudnessTarget: narrationState.loudnessTarget,
+          openaiVoiceId: narrationState.openaiVoiceId
         };
 
         var resp = await fetch('/shorts/narrate', {
