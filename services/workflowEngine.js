@@ -1172,12 +1172,32 @@ async function publishPinterest(destAccount, sourceItem, mediaPath) {
       const detail = parsed && (parsed.message || parsed.error_message || parsed.error || JSON.stringify(parsed).slice(0, 250));
       throw new Error('Pinterest boards lookup failed (HTTP ' + boardsResponse.status + '): ' + (detail || 'no detail'));
     }
-    const boards = parsed.items || parsed.data || [];
+    let boards = parsed.items || parsed.data || [];
+    // Pinterest sandbox (Trial tier) starts with no boards by default —
+    // boards on pinterest.com (production) don't exist in sandbox at
+    // all. Auto-create a default "Splicora" board so the publish has a
+    // place to land. On production this branch fires only if the user
+    // somehow has zero boards on their real account.
     if (!boards.length) {
-      throw new Error('Pinterest has no boards on the connected account. Create at least one board on pinterest.com, then retry the publish.');
+      console.log('[WorkflowEngine] Pinterest: no boards found, auto-creating default Splicora board');
+      const createBoardResp = await httpsPostJson(
+        (process.env.PINTEREST_API_BASE_URL || 'https://api-sandbox.pinterest.com') + '/v5/boards',
+        { name: 'Splicora', description: 'Auto-created by Splicora for cross-posting.', privacy: 'PUBLIC' },
+        { Authorization: `Bearer ${accessToken}` }
+      );
+      const cbBody = (createBoardResp && createBoardResp.body) || {};
+      if (createBoardResp.status && (createBoardResp.status < 200 || createBoardResp.status >= 300)) {
+        const detail = cbBody.message || cbBody.error || JSON.stringify(cbBody).slice(0, 250);
+        throw new Error('Pinterest board create failed (HTTP ' + createBoardResp.status + '): ' + (detail || 'no detail'));
+      }
+      if (!cbBody.id) {
+        throw new Error('Pinterest board create returned no id: ' + JSON.stringify(cbBody).slice(0, 250));
+      }
+      boards = [cbBody];
+      console.log('[WorkflowEngine] Pinterest: auto-created board id=' + cbBody.id);
     }
     boardId = boards[0].id;
-    console.log(`[WorkflowEngine] Pinterest: auto-selected first board '${boards[0].name || boards[0].id}' (id=${boardId})`);
+    console.log(`[WorkflowEngine] Pinterest: using board '${boards[0].name || boards[0].id}' (id=${boardId})`);
   }
 
   // Build the pin payload using the v5 media_source structure.
