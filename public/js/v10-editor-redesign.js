@@ -4271,6 +4271,81 @@
   }
 
   // ═════════════════════════════════════════════════════════════════
+  // Task #171 — Grab one representative frame from a video URL and
+  // return it as a base64 data URL. Used by the Style Transfer modal
+  // to populate per-style previews. Seeks to ~25% of the clip's
+  // duration to dodge the typical black opening frame; falls back to
+  // 0.5s if duration is unknown. Resolves to '' on any failure so the
+  // caller can keep its fallback presentation (gradient tiles) instead
+  // of throwing — frame capture is a "nice-to-have", not load-bearing.
+  function captureRepresentativeFrame(mediaUrl){
+    return new Promise(function(resolve){
+      if (!mediaUrl){ resolve(''); return; }
+      var vid = document.createElement('video');
+      vid.crossOrigin = 'anonymous';
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'auto';
+      // Hide it. We need it in the DOM in some browsers for the
+      // metadata/seek events to fire reliably.
+      vid.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
+      document.body.appendChild(vid);
+
+      var settled = false;
+      function finish(value){
+        if (settled) return;
+        settled = true;
+        try { vid.removeAttribute('src'); vid.load(); } catch(_){}
+        try { vid.parentNode && vid.parentNode.removeChild(vid); } catch(_){}
+        resolve(value || '');
+      }
+
+      // Safety net: if seek/draw take too long, give up and let the
+      // tiles render their gradient fallback.
+      var timeoutId = setTimeout(function(){ finish(''); }, 5000);
+
+      vid.addEventListener('loadedmetadata', function(){
+        var seekTo = 0.5;
+        if (isFinite(vid.duration) && vid.duration > 1){
+          seekTo = vid.duration * 0.25;
+        }
+        try { vid.currentTime = seekTo; } catch(_){ finish(''); }
+      });
+
+      vid.addEventListener('seeked', function(){
+        try {
+          var w = vid.videoWidth  || 320;
+          var h = vid.videoHeight || 180;
+          // Cap preview size — 320px max keeps the resulting data URL
+          // small (~10KB) so we can stamp it into 8 tiles without
+          // hitting memory pressure. Filter quality on a 320px tile
+          // is plenty for a "what does this look like" preview.
+          var scale = Math.min(1, 320 / w);
+          var cw = Math.max(1, Math.round(w * scale));
+          var ch = Math.max(1, Math.round(h * scale));
+          var canvas = document.createElement('canvas');
+          canvas.width = cw;
+          canvas.height = ch;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(vid, 0, 0, cw, ch);
+          var url = canvas.toDataURL('image/jpeg', 0.78);
+          clearTimeout(timeoutId);
+          finish(url);
+        } catch (e){
+          // toDataURL throws SecurityError when the canvas is tainted
+          // (cross-origin without CORS). Same-origin /video-editor/
+          // download/ URLs are fine; this path catches the edge cases.
+          clearTimeout(timeoutId);
+          finish('');
+        }
+      });
+
+      vid.addEventListener('error', function(){ clearTimeout(timeoutId); finish(''); });
+      try { vid.src = mediaUrl; vid.load(); }
+      catch(_){ clearTimeout(timeoutId); finish(''); }
+    });
+  }
+
   // Task #53 — Style Transfer modal
   // Picks a preset look; server bakes an FFmpeg filter chain that
   // approximates it (EQ + curves + noise + hue/saturation combos).
@@ -4294,21 +4369,35 @@
     bk.id = 'v10StyleModal';
     bk.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
     var panel = document.createElement('div');
-    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(520px,92vw);color:#e2e0f0;font-family:system-ui,sans-serif';
+    panel.style.cssText = 'background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(640px,94vw);color:#e2e0f0;font-family:system-ui,sans-serif;max-height:92vh;overflow:auto';
+    // Task #171 \u2014 each style now carries a CSS-filter approximation
+    // of its ffmpeg chain. The previews are NOT pixel-perfect (CSS
+    // can't replicate curves= or noise= exactly), but they're close
+    // enough to let users compare looks before committing 5-10s of
+    // server-side rendering. The `bg` gradient is kept as a fallback
+    // for when frame capture fails (e.g. CORS-tainted media).
     var STYLES = [
-      { id:'cyberpunk',    label:'Cyberpunk',    bg:'linear-gradient(135deg,#ec4899,#7c3aed,#22d3ee)' },
-      { id:'film_noir',    label:'Film Noir',    bg:'linear-gradient(135deg,#1f2937,#111827)' },
-      { id:'oil_painting', label:'Oil Painting', bg:'linear-gradient(135deg,#92400e,#f59e0b,#b91c1c)' },
-      { id:'watercolor',   label:'Watercolor',   bg:'linear-gradient(135deg,#dbeafe,#93c5fd,#ddd6fe)' },
-      { id:'comic',        label:'Comic Book',   bg:'linear-gradient(135deg,#fbbf24,#ef4444,#3b82f6)' },
-      { id:'neon',         label:'Neon',         bg:'linear-gradient(135deg,#06b6d4,#7c3aed,#ec4899)' },
-      { id:'vintage_film', label:'Vintage Film', bg:'linear-gradient(135deg,#a16207,#b45309,#78350f)' },
-      { id:'sepia',        label:'Sepia',        bg:'linear-gradient(135deg,#a16207,#d97706,#fbbf24)' }
+      { id:'cyberpunk',    label:'Cyberpunk',    bg:'linear-gradient(135deg,#ec4899,#7c3aed,#22d3ee)',
+        css:'hue-rotate(180deg) saturate(2.6) contrast(1.2) brightness(0.96)' },
+      { id:'film_noir',    label:'Film Noir',    bg:'linear-gradient(135deg,#1f2937,#111827)',
+        css:'grayscale(1) contrast(1.6) brightness(0.85)' },
+      { id:'oil_painting', label:'Oil Painting', bg:'linear-gradient(135deg,#92400e,#f59e0b,#b91c1c)',
+        css:'saturate(1.4) contrast(1.2) blur(0.6px)' },
+      { id:'watercolor',   label:'Watercolor',   bg:'linear-gradient(135deg,#dbeafe,#93c5fd,#ddd6fe)',
+        css:'blur(1.5px) saturate(1.4) brightness(1.08) hue-rotate(8deg)' },
+      { id:'comic',        label:'Comic Book',   bg:'linear-gradient(135deg,#fbbf24,#ef4444,#3b82f6)',
+        css:'saturate(2) contrast(1.55) brightness(1.05)' },
+      { id:'neon',         label:'Neon',         bg:'linear-gradient(135deg,#06b6d4,#7c3aed,#ec4899)',
+        css:'hue-rotate(200deg) saturate(3) contrast(1.3) brightness(1.05) blur(0.5px)' },
+      { id:'vintage_film', label:'Vintage Film', bg:'linear-gradient(135deg,#a16207,#b45309,#78350f)',
+        css:'sepia(0.4) contrast(1.05) saturate(0.7) brightness(0.96)' },
+      { id:'sepia',        label:'Sepia',        bg:'linear-gradient(135deg,#a16207,#d97706,#fbbf24)',
+        css:'sepia(1) saturate(0.85) brightness(0.96)' }
     ];
     panel.innerHTML =
       '<div style="font-size:13px;font-weight:700;color:#fde047;margin-bottom:6px">\ud83e\ude84 STYLE TRANSFER</div>' +
-      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Bakes a cinematic look into the selected V1 clip via a preset FFmpeg filter chain. Not neural style transfer, but works in seconds and no API key needed.</div>' +
-      '<div id="styleGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px"></div>' +
+      '<div style="font-size:11px;color:#8886a0;margin-bottom:12px">Bakes a cinematic look into the selected V1 clip. Previews below show how each style will look applied to a frame from your clip.</div>' +
+      '<div id="styleGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"></div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
         '<button id="stCancel" style="padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer">Cancel</button>' +
         '<button id="stRun"    style="padding:8px 18px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer" disabled>Apply \u2192</button>' +
@@ -4317,23 +4406,55 @@
     document.body.appendChild(bk);
     var selectedStyle = null;
     var grid = panel.querySelector('#styleGrid');
+    // Build the tiles up front. Each tile shows the style's gradient
+    // as a fallback background and label; once the frame capture below
+    // resolves, we swap in the captured frame as a CSS background-image
+    // so the per-tile `filter:` actually has something to operate on.
+    var tiles = {};
     STYLES.forEach(function(s){
       var b = document.createElement('button');
+      b.type = 'button';
       b.dataset.id = s.id;
-      b.style.cssText = 'padding:14px 6px;background:' + s.bg + ';border:2px solid transparent' +
-        ';border-radius:8px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;text-shadow:0 1px 3px rgba(0,0,0,.8);min-height:60px';
-      b.textContent = s.label;
+      // Outer button is the click target + selection ring.
+      b.style.cssText = 'position:relative;padding:0;background:transparent;border:2px solid transparent;border-radius:10px;cursor:pointer;overflow:hidden;display:flex;flex-direction:column;text-align:center;transition:border-color .15s,transform .12s';
+      b.innerHTML =
+        '<div class="st-preview" style="width:100%;aspect-ratio:16/9;background:' + s.bg + ';background-size:cover;background-position:center;filter:' + s.css + ';transition:filter .2s"></div>' +
+        '<div style="padding:6px 4px 7px 4px;background:rgba(15,11,30,.85);color:#e2e0f0;font-size:11px;font-weight:600;letter-spacing:.01em">' + s.label + '</div>';
       b.addEventListener('click', function(){
         selectedStyle = s.id;
         Array.from(grid.querySelectorAll('button')).forEach(function(o){
-          o.style.borderColor = o.dataset.id === selectedStyle ? '#fde047' : 'transparent';
+          var isSel = o.dataset.id === selectedStyle;
+          o.style.borderColor = isSel ? '#fde047' : 'transparent';
+          o.style.transform   = isSel ? 'scale(1.02)' : 'scale(1)';
         });
         panel.querySelector('#stRun').disabled = false;
       });
+      b.addEventListener('mouseenter', function(){ if (selectedStyle !== s.id) b.style.borderColor = 'rgba(253,224,71,.4)'; });
+      b.addEventListener('mouseleave', function(){ if (selectedStyle !== s.id) b.style.borderColor = 'transparent'; });
       grid.appendChild(b);
+      tiles[s.id] = b;
     });
     panel.querySelector('#stCancel').addEventListener('click', function(){ bk.remove(); });
     bk.addEventListener('click', function(e){ if (e.target === bk) bk.remove(); });
+
+    // Task #171 \u2014 Grab one representative frame from the target clip
+    // and use it as the background-image for every tile. Each tile's
+    // CSS `filter:` then approximates how that style will look. The
+    // capture is done in a hidden <video>+<canvas> pair so the user's
+    // main #videoPlayer stays where it was. No round trip, no server
+    // render, no perceptible UI delay \u2014 the previews just appear.
+    captureRepresentativeFrame(target.dataset.mediaUrl).then(function(dataUrl){
+      if (!dataUrl) return;                  // capture failed \u2192 keep gradients
+      // Swap the gradient fallback for the real frame on every tile.
+      // background-size:cover + center keeps any aspect ratio readable.
+      Object.keys(tiles).forEach(function(id){
+        var thumb = tiles[id].querySelector('.st-preview');
+        if (thumb){
+          thumb.style.backgroundImage = 'url("' + dataUrl + '")';
+          thumb.style.backgroundColor = '#000';
+        }
+      });
+    }).catch(function(){ /* silent \u2014 gradients remain */ });
     panel.querySelector('#stRun').addEventListener('click', async function(){
       if (!selectedStyle){ toast('Pick a style first'); return; }
       bk.remove();
