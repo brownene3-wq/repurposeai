@@ -22,6 +22,56 @@ if (!ffmpegPath) { try { ffmpegPath = require('ffmpeg-static'); } catch (e) {} }
 if (!ffmpegPath) { try { execSync('which ffmpeg', { stdio: 'pipe' }); ffmpegPath = 'ffmpeg'; } catch (e) {} }
 const ffmpegAvailable = !!ffmpegPath;
 console.log(ffmpegAvailable ? `ffmpeg available at: ${ffmpegPath}` : 'ffmpeg not found - clip download disabled');
+
+// === ffmpeg environment audit ============================================
+// Runs once at boot. Reports the binary's existence, stat, executability,
+// the CLIPS_DIR mount info, and ffmpeg's own version + supported codecs.
+// Logs go to Railway deploy output so we can confirm the environment is
+// what we think it is.
+(function auditFfmpegEnv() {
+  try {
+    console.log('[ffmpeg-audit] ffmpegPath =', ffmpegPath);
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+      const st = fs.statSync(ffmpegPath);
+      console.log('[ffmpeg-audit] binary stat: size=' + st.size + ' mode=' + st.mode.toString(8) + ' uid=' + st.uid + ' gid=' + st.gid);
+      try { fs.accessSync(ffmpegPath, fs.constants.X_OK); console.log('[ffmpeg-audit] binary IS executable'); }
+      catch (e) { console.warn('[ffmpeg-audit] binary NOT executable:', e.message); }
+    } else if (ffmpegPath === 'ffmpeg') {
+      try {
+        const which = execSync('which ffmpeg', { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+        console.log('[ffmpeg-audit] PATH ffmpeg resolves to:', which);
+      } catch (e) { console.warn('[ffmpeg-audit] which ffmpeg failed:', e.message); }
+    }
+    // Run `ffmpeg -version` so we know what build we have on Railway.
+    try {
+      const ver = execSync(`${ffmpegPath} -version`, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+      console.log('[ffmpeg-audit] version output (first line):', ver.split('\n')[0]);
+    } catch (e) { console.warn('[ffmpeg-audit] ffmpeg -version failed:', e.message); }
+    // Verify the process can write to CLIPS_DIR.
+    try {
+      if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
+      const probePath = path.join(CLIPS_DIR, '_audit_' + Date.now() + '.tmp');
+      fs.writeFileSync(probePath, 'audit');
+      fs.unlinkSync(probePath);
+      console.log('[ffmpeg-audit] CLIPS_DIR writeable:', CLIPS_DIR);
+    } catch (e) {
+      console.error('[ffmpeg-audit] CLIPS_DIR NOT writeable:', CLIPS_DIR, e.message);
+    }
+    // Confirm uploads/repurpose dir is also writeable + report its location.
+    try {
+      const uplDir = path.join(__dirname, '..', 'uploads', 'repurpose');
+      if (!fs.existsSync(uplDir)) fs.mkdirSync(uplDir, { recursive: true });
+      const probe = path.join(uplDir, '_audit_' + Date.now() + '.tmp');
+      fs.writeFileSync(probe, 'audit');
+      fs.unlinkSync(probe);
+      console.log('[ffmpeg-audit] uploads/repurpose writeable:', uplDir);
+    } catch (e) {
+      console.error('[ffmpeg-audit] uploads/repurpose NOT writeable:', e.message);
+    }
+  } catch (e) {
+    console.error('[ffmpeg-audit] audit threw:', e && e.stack || e);
+  }
+})();
 const { requireAuth, checkPlanLimit, checkUsageLimit, requireFeature } = require('../middleware/auth');
 const { requireCredits } = require('../middleware/credits');
 const { requireStorageHeadroom, trackUploadBytes } = require('../middleware/storage');
@@ -1835,64 +1885,44 @@ async function _runUploadAnalysisOnPath(req, res, filePath, fileName) {
     // the music-note overlay.
     if (_persistedPath) {
       const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
-      let needPlaceholder = true;
       try {
+        console.log('[analyze-upload] starting sync thumbnail extract for ' + analysisId + ' from ' + _persistedPath);
         const hasVid = await _ffprobeHasVideo(_persistedPath).catch((e) => {
-          console.warn('  [analyze-upload] ffprobe error:', e && e.message);
+          console.error('[analyze-upload] ffprobe threw:', e && e.stack || e);
           return false;
         });
-        if (hasVid) {
-          try { await extractFrameAt(_persistedPath, 1.0, thumbOut); }
-          catch (e1) {
-            console.warn('  [analyze-upload] thumb @1s failed, trying @0:', e1.message);
-            try { await extractFrameAt(_persistedPath, 0, thumbOut); }
-            catch (e2) { console.error('  [analyze-upload] thumb @0 also failed:', e2.message); }
+        if (!hasVid) {
+          console.warn('[analyze-upload] _ffprobeHasVideo returned false for ' + _persistedPath + ' — skipping thumbnail extract. Audio-only source or ffprobe parse failure.');
+        } else {
+          let extractErr = null;
+          try {
+            await extractFrameAt(_persistedPath, 1.0, thumbOut);
+          } catch (e1) {
+            console.error('[analyze-upload] extractFrameAt @1s FAILED:', e1.message);
+            extractErr = e1;
+            try {
+              await extractFrameAt(_persistedPath, 0, thumbOut);
+              extractErr = null;
+            } catch (e2) {
+              console.error('[analyze-upload] extractFrameAt @0 ALSO FAILED:', e2.message);
+              extractErr = e2;
+            }
           }
-          if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
+          if (extractErr) {
+            console.error('[analyze-upload] thumbnail extract failed for ' + analysisId + '. NO thumbnail will be persisted. Real error chain logged above.');
+          } else if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
             const thumbBytes = _fs.readFileSync(thumbOut);
             await shortsOps.setThumbnail(analysisId, thumbBytes);
-            console.log('  [analyze-upload] thumbnail pre-persisted to DB (' + thumbBytes.length + ' bytes) for ' + analysisId);
-            needPlaceholder = false;
+            console.log('[analyze-upload] thumbnail persisted to DB (' + thumbBytes.length + ' bytes) for ' + analysisId);
           } else {
-            console.warn('  [analyze-upload] thumbnail extract produced no valid output for ' + analysisId);
+            console.error('[analyze-upload] extractFrameAt returned 0 but ' + thumbOut + ' is missing or too small. size=' + (_fs.existsSync(thumbOut) ? _fs.statSync(thumbOut).size : '(file missing)'));
           }
-        } else {
-          console.log('  [analyze-upload] source has no video stream (audio-only) for ' + analysisId);
         }
       } catch (tErr) {
-        console.error('  [analyze-upload] sync thumbnail extract failed:', tErr.message);
-      }
-      // Fallback: if real extraction didn't produce a usable thumbnail,
-      // generate the styled placeholder so the card NEVER falls through
-      // to the music-note overlay. Audio-only uploads + decode failures
-      // all land here.
-      if (needPlaceholder) {
-        try {
-          await generatePlaceholderThumb(fileName || 'Uploaded video', thumbOut);
-          if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
-            const phBytes = _fs.readFileSync(thumbOut);
-            await shortsOps.setThumbnail(analysisId, phBytes);
-            console.log('  [analyze-upload] placeholder thumbnail persisted to DB (' + phBytes.length + ' bytes) for ' + analysisId);
-          }
-        } catch (phErr) {
-          console.error('  [analyze-upload] placeholder generation failed:', phErr.message);
-        }
+        console.error('[analyze-upload] sync thumbnail extract path threw:', tErr && tErr.stack || tErr);
       }
     } else {
-      // _persistedPath was null — persist still produces a placeholder
-      // so the card has SOMETHING to show. This is the safety net
-      // for any unexpected persist failure (out of disk, etc.).
-      try {
-        const thumbOut = path.join(CLIPS_DIR, '_uthumb_' + analysisId + '.jpg');
-        await generatePlaceholderThumb(fileName || 'Uploaded video', thumbOut);
-        if (_fs.existsSync(thumbOut) && _fs.statSync(thumbOut).size > 256) {
-          const phBytes = _fs.readFileSync(thumbOut);
-          await shortsOps.setThumbnail(analysisId, phBytes);
-          console.log('  [analyze-upload] placeholder thumbnail persisted to DB for ' + analysisId + ' (persist failed earlier)');
-        }
-      } catch (phErr) {
-        console.error('  [analyze-upload] safety-net placeholder failed:', phErr.message);
-      }
+      console.error('[analyze-upload] _persistedPath is null for ' + analysisId + ' — source was never written to CLIPS_DIR. Thumbnail + R2 backup will be skipped.');
     }
 
     sendUpdate({ status: 'completed', message: 'Analysis complete!', analysisId, moments });
@@ -3901,8 +3931,37 @@ function generatePlaceholderThumb(title, outPath) {
 // is small (~10-40 KB) so we don't bother with a concurrency lock.
 function extractFrameAt(sourcePath, atSec, outPath) {
   return new Promise((resolve, reject) => {
+    // Pre-flight diagnostic — log everything we know about the input
+    // BEFORE invoking ffmpeg. If the input isn't where we think it is,
+    // ffmpeg's own error will name 'No such file or directory' but
+    // this gives us context to interpret it.
+    const tag = '[extractFrameAt] ' + path.basename(sourcePath || '');
+    try {
+      const exists = sourcePath && fs.existsSync(sourcePath);
+      let stat = null;
+      if (exists) {
+        const st = fs.statSync(sourcePath);
+        stat = { size: st.size, mode: st.mode.toString(8), mtime: st.mtime.toISOString() };
+      }
+      console.log(tag, 'pre-flight:', JSON.stringify({
+        sourcePath, atSec, outPath,
+        sourceExists: exists,
+        sourceStat: stat,
+        ffmpegPath
+      }));
+    } catch (preErr) {
+      console.warn(tag, 'pre-flight check threw:', preErr.message);
+    }
+    // -loglevel verbose makes ffmpeg dump format detection, codec
+    // negotiation, and per-frame timestamps to stderr. -nostdin
+    // stops it waiting on stdin if it ever opens it. -hide_banner
+    // trims the version chatter at startup so the actual error is
+    // easier to read.
     const ffArgs = [
       '-y',
+      '-hide_banner',
+      '-nostdin',
+      '-loglevel', 'verbose',
       '-ss', String(Math.max(0, atSec)),
       '-i', sourcePath,
       '-frames:v', '1',
@@ -3910,18 +3969,31 @@ function extractFrameAt(sourcePath, atSec, outPath) {
       '-f', 'image2',
       outPath
     ];
+    console.log(tag, 'spawn:', ffmpegPath, ffArgs.join(' '));
     const proc = spawn(ffmpegPath, ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     let settled = false;
     const settle = (fn, val) => { if (!settled) { settled = true; clearTimeout(timer); fn(val); } };
     proc.stderr.on('data', d => { stderr += d.toString(); });
-    proc.on('error', e => settle(reject, e));
-    proc.on('close', code => code === 0
-      ? settle(resolve)
-      : settle(reject, new Error('ffmpeg frame exit ' + code + ': ' + stderr.slice(-200))));
+    proc.on('error', e => {
+      console.error(tag, 'spawn error:', e && e.stack || e);
+      settle(reject, e);
+    });
+    proc.on('close', (code) => {
+      if (code === 0) {
+        console.log(tag, 'exit 0 — output exists:', fs.existsSync(outPath), 'size:', fs.existsSync(outPath) ? fs.statSync(outPath).size : '(missing)');
+        settle(resolve);
+      } else {
+        // Dump the FULL stderr so we can see exactly what ffmpeg
+        // complained about. No truncation.
+        console.error(tag, 'exit ' + code + '. FULL STDERR follows:\n' + stderr);
+        settle(reject, new Error('ffmpeg frame exit ' + code + ': ' + stderr.slice(-800)));
+      }
+    });
     const timer = setTimeout(() => {
       try { proc.kill('SIGKILL'); } catch (_) {}
-      settle(reject, new Error('ffmpeg frame timeout (20s)'));
+      console.error(tag, 'timeout (20s). Partial stderr so far:\n' + stderr);
+      settle(reject, new Error('ffmpeg frame timeout (20s): ' + stderr.slice(-400)));
     }, 20000);
   });
 }
@@ -3934,6 +4006,8 @@ function extractFrameAt(sourcePath, atSec, outPath) {
 // ~50-150ms once per source.
 function _ffprobeHasVideo(sourcePath) {
   return new Promise((resolve) => {
+    const tag = '[ffprobeHasVideo] ' + path.basename(sourcePath || '');
+    console.log(tag, 'probe start. sourcePath=' + sourcePath + ' exists=' + (sourcePath && fs.existsSync(sourcePath)));
     const proc = spawn(ffmpegPath, ['-hide_banner', '-i', sourcePath], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     proc.stderr.on('data', d => { stderr += d.toString(); });
@@ -3946,6 +4020,7 @@ function _ffprobeHasVideo(sourcePath) {
       //   Stream #0:0(eng): Audio: aac, ...
       // For audio-only sources only the Audio line is present.
       const hasVideo = /Stream #\d+:\d+(?:\(\w+\))?: Video:/i.test(stderr);
+      console.log(tag, 'probe done. hasVideo=' + hasVideo + ' stderr-tail:\n' + stderr.slice(-600));
       resolve(hasVideo);
     };
     proc.on('close', finish);
@@ -3994,63 +4069,55 @@ router.get('/upload-thumbnail/:analysisId', requireAuth, async (req, res) => {
       return sendBytes(bytes);
     }
 
-    // Helper: last-resort styled placeholder so we ALWAYS return a real
-    // image. Promotes to DB on success so subsequent requests are
-    // cache hits and the card never falls back to the music-note
-    // overlay again.
-    const servePlaceholder = async (reason) => {
-      try {
-        console.log('  upload-thumbnail: serving placeholder for ' + analysisId + ' (' + reason + ')');
-        await generatePlaceholderThumb(analysis.video_title || 'Uploaded video', outPath);
-        if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
-          const phBytes = fs.readFileSync(outPath);
-          shortsOps.setThumbnail(analysisId, phBytes).catch(e =>
-            console.warn('  upload-thumbnail placeholder DB persist failed:', e.message));
-          return sendBytes(phBytes);
-        }
-      } catch (phErr) {
-        console.error('  upload-thumbnail placeholder generation failed:', phErr.message);
-      }
-      // True last resort — return a tiny 1x1 transparent JPEG so the
-      // <img> never fires onerror.
-      const fallback = Buffer.from([
-        0xff,0xd8,0xff,0xe0,0x00,0x10,0x4a,0x46,0x49,0x46,0x00,0x01,0x01,0x00,0x00,0x01,
-        0x00,0x01,0x00,0x00,0xff,0xdb,0x00,0x43,0x00,0x08,0x06,0x06,0x07,0x06,0x05,0x08,
-        0x07,0x07,0x07,0x09,0x09,0x08,0x0a,0x0c,0x14,0x0d,0x0c,0x0b,0x0b,0x0c,0x19,0x12,
-        0x13,0x0f,0x14,0x1d,0x1a,0x1f,0x1e,0x1d,0x1a,0x1c,0x1c,0x20,0x24,0x2e,0x27,0x20,
-        0x22,0x2c,0x23,0x1c,0x1c,0x28,0x37,0x29,0x2c,0x30,0x31,0x34,0x34,0x34,0x1f,0x27,
-        0x39,0x3d,0x38,0x32,0x3c,0x2e,0x33,0x34,0x32,0xff,0xc0,0x00,0x0b,0x08,0x00,0x01,
-        0x00,0x01,0x01,0x01,0x11,0x00,0xff,0xc4,0x00,0x1f,0x00,0x00,0x01,0x05,0x01,0x01,
-        0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x02,0x03,0x04,
-        0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0xff,0xc4,0x00,0xb5,0x10,0x00,0x02,0x01,0x03,
-        0x03,0x02,0x04,0x03,0x05,0x05,0x04,0x04,0x00,0x00,0x01,0x7d,0x01,0x02,0x03,0x00,
-        0x04,0x11,0x05,0x12,0x21,0x31,0x41,0x06,0x13,0x51,0x61,0x07,0x22,0x71,0x14,0x32,
-        0x81,0x91,0xa1,0x08,0x23,0x42,0xb1,0xc1,0x15,0x52,0xd1,0xf0,0x24,0x33,0x62,0x72,
-        0x82,0xff,0xda,0x00,0x08,0x01,0x01,0x00,0x00,0x3f,0x00,0xfb,0xd0,0xff,0xd9
-      ]);
-      return sendBytes(fallback);
-    };
-
-    // 3) Live extract from source — resolve, probe, frame-extract.
-    //    Any failure here falls through to the placeholder generator.
+    // 3) Live extract from source. NO PLACEHOLDER MASKING — every
+    //    failure path returns a clear error response so the real
+    //    issue is visible to the operator and in the browser
+    //    console. Logs include the FULL ffmpeg stderr chain.
+    console.log('[upload-thumbnail] live extract for analysis ' + analysisId);
     const sourcePath = await resolveUploadedSourcePath(analysisId);
-    if (!sourcePath) return servePlaceholder('source missing');
+    if (!sourcePath) {
+      console.error('[upload-thumbnail] source missing for ' + analysisId + ' (no /tmp file, no R2 key in DB)');
+      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB. Re-upload the video to regenerate.' });
+    }
+    console.log('[upload-thumbnail] resolved source path for ' + analysisId + ': ' + sourcePath);
 
-    // Probe for a usable video stream. Audio-only uploads (podcasts)
-    // get the styled placeholder instead of a confusing 404.
+    // Probe for a usable video stream. Audio-only uploads correctly
+    // get a 404 + noVideoSource so the client paints its own overlay.
     const mainHasVideo = await _ffprobeHasVideo(sourcePath);
-    if (!mainHasVideo) return servePlaceholder('audio-only');
+    if (!mainHasVideo) {
+      console.warn('[upload-thumbnail] _ffprobeHasVideo returned false for ' + analysisId + ' source=' + sourcePath);
+      return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
+    }
 
+    let extractError = null;
     try {
       await extractFrameAt(sourcePath, 1.0, outPath);
     } catch (e) {
-      try { await extractFrameAt(sourcePath, 0, outPath); } catch (e2) {
-        console.error('  upload-thumbnail extract failed:', e2.message);
-        return servePlaceholder('extract failed');
+      console.error('[upload-thumbnail] extract @1s failed for ' + analysisId + ': ' + e.message);
+      extractError = e;
+      try {
+        await extractFrameAt(sourcePath, 0, outPath);
+        extractError = null;
+      } catch (e2) {
+        console.error('[upload-thumbnail] extract @0 also failed for ' + analysisId + ': ' + e2.message);
+        extractError = e2;
       }
     }
+    if (extractError) {
+      // Surface the real ffmpeg error to the caller. No masking.
+      return res.status(500).json({
+        error: 'Thumbnail extraction failed',
+        ffmpegError: extractError.message,
+        analysisId,
+        sourcePath
+      });
+    }
     if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 256) {
-      return servePlaceholder('extract produced empty output');
+      console.error('[upload-thumbnail] extract returned 0 but output is missing/empty for ' + analysisId);
+      return res.status(500).json({
+        error: 'Thumbnail extraction produced empty output',
+        analysisId
+      });
     }
     const bytes = fs.readFileSync(outPath);
     // Persist to DB so future requests survive /tmp wipes.
@@ -4137,35 +4204,20 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       return sendBytes(bytes);
     }
 
-    // Local placeholder helper for this endpoint — generates a styled
-    // image from the moment's title (or analysis title) and persists
-    // it as the moment's thumbnail. Same approach as the main
-    // upload-thumbnail endpoint; the card never falls through to
-    // the music-note overlay.
-    const sendMomentPlaceholder = async (reason) => {
-      try {
-        console.log('  upload-moment-thumbnail: serving placeholder for ' + analysisId + '/m' + momentIdx + ' (' + reason + ')');
-        const phTitle = (moment && moment.title) || analysis.video_title || 'Moment ' + (momentIdx + 1);
-        await generatePlaceholderThumb(phTitle, outPath);
-        if (fs.existsSync(outPath) && fs.statSync(outPath).size > 256) {
-          const phBytes = fs.readFileSync(outPath);
-          shortsOps.setMomentThumbnail(analysisId, momentIdx, phBytes).catch(() => {});
-          return sendBytes(phBytes);
-        }
-      } catch (phErr) {
-        console.error('  upload-moment-thumbnail placeholder failed:', phErr.message);
-      }
-      return res.status(500).end();
-    };
-
-    // 3) Live extract
+    // 3) Live extract — surface real errors, no placeholder masking.
     const sourcePath = await resolveUploadedSourcePath(analysisId);
-    if (!sourcePath) return sendMomentPlaceholder('source missing');
+    if (!sourcePath) {
+      console.error('[upload-moment-thumbnail] source missing for ' + analysisId + '/m' + momentIdx);
+      return res.status(404).json({ error: 'Uploaded source missing and thumbnail not yet persisted in DB.' });
+    }
 
     // Probe first: audio-only sources produce black frames at every
-    // seek position.
+    // seek position. Short-circuit with 404 + noVideoSource.
     const hasVideo = await _ffprobeHasVideo(sourcePath);
-    if (!hasVideo) return sendMomentPlaceholder('audio-only');
+    if (!hasVideo) {
+      console.warn('[upload-moment-thumbnail] source has no video stream for ' + analysisId + ' source=' + sourcePath);
+      return res.status(404).json({ error: 'Source has no video stream', noVideoSource: true });
+    }
     let startSec = 0, endSec = 0;
     try {
       const r = parseTimeRange(moment.timeRange);
@@ -4224,9 +4276,14 @@ router.get('/upload-moment-thumbnail/:analysisId/:momentIdx', requireAuth, async
       } catch (fbErr) {
         console.error('  upload-moment-thumbnail main-thumb fallback failed:', fbErr.message);
       }
-      // Final last-resort: styled placeholder so the moment card never
-      // shows the music-note overlay.
-      return sendMomentPlaceholder('all seeks failed');
+      // No placeholder masking — surface the real failure so the
+      // operator sees what ffmpeg actually complained about.
+      return res.status(500).json({
+        error: 'Moment thumbnail extraction failed',
+        ffmpegError: lastErr && lastErr.message,
+        analysisId,
+        momentIdx
+      });
     }
     const bytes = fs.readFileSync(outPath);
     shortsOps.setMomentThumbnail(analysisId, momentIdx, bytes).catch(e =>
