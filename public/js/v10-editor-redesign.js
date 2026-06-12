@@ -3988,21 +3988,86 @@
       var prog = showBlockingProgressModal('AI Voice', ['Synthesizing voice\u2026', 'Adding to A1\u2026']);
       var beforeUnload = function(e){ e.preventDefault(); e.returnValue = ''; return ''; };
       window.addEventListener('beforeunload', beforeUnload);
+      // Task #172 \u2014 Hard client-side timeout (90s). Without this, a
+      // server-side hang would leave the user staring at "Synthesizing
+      // voice\u2026" indefinitely. 90s is double the server's 60s SDK
+      // timeout to give the response time to arrive after the SDK
+      // returns. AbortController.abort() rejects the fetch with an
+      // AbortError that the catch block below translates into a clean
+      // "timed out" message.
+      var ctrl = new AbortController();
+      var clientTimer = setTimeout(function(){ try { ctrl.abort(); } catch(_){} }, 90000);
       try {
         prog.advance(0);
         var r = await fetch('/video-editor/ai-voice', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: text, voice: selectedVoice, speed: sp })
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          signal:  ctrl.signal,
+          body:    JSON.stringify({ text: text, voice: selectedVoice, speed: sp })
         });
-        var d = await r.json();
-        if (!r.ok || !d.success) throw new Error(d.error || 'TTS failed');
-        prog.advance(1);
-        if (typeof window.addClipToTimeline === 'function'){
-          window.addClipToTimeline('AI Voice (' + selectedVoice + ')', 'aud', d.duration, d.mediaUrl);
+        // Be defensive about the response shape. If the session
+        // expired the server might redirect to a login HTML page;
+        // r.json() would then throw "Unexpected token <". Read the
+        // body as text first, try to parse, and fall back to a clear
+        // status-based error so the user sees something actionable
+        // instead of a JS parse error.
+        var bodyText = await r.text();
+        var d = null;
+        try { d = JSON.parse(bodyText); } catch(_){}
+        if (!r.ok){
+          var srvMsg = (d && d.error) ? d.error : null;
+          if (!srvMsg){
+            if (r.status === 401 || r.status === 403){
+              srvMsg = 'Your session expired. Please refresh and sign in again.';
+            } else {
+              srvMsg = 'Voice generation failed (HTTP ' + r.status + ').';
+            }
+          }
+          throw new Error(srvMsg);
         }
-        prog.finish('Voiceover added (' + d.duration.toFixed(1) + 's)');
-      } catch (err){ prog.fail(err.message || String(err)); }
-      finally { window.removeEventListener('beforeunload', beforeUnload); }
+        if (!d || !d.success){
+          throw new Error((d && d.error) || 'Voice generation returned an unexpected response.');
+        }
+        prog.advance(1);
+        // Coerce duration so a missing/null ffprobe value can't crash
+        // d.duration.toFixed() \u2014 that would have thrown TypeError and
+        // shown a confusing error instead of the success state.
+        var dur = (typeof d.duration === 'number' && isFinite(d.duration)) ? d.duration : 0;
+        if (typeof window.addClipToTimeline === 'function'){
+          try { window.addClipToTimeline('AI Voice (' + selectedVoice + ')', 'aud', dur, d.mediaUrl); } catch(_){}
+        }
+        // Task #172 \u2014 Stamp the voiceover into the Media library too
+        // so it picks up the \u00d7 delete button + Dashboard storage card
+        // update like other audio uploads do.
+        if (typeof window.addUploadedMediaItem === 'function'){
+          try {
+            window.addUploadedMediaItem({
+              name:      'AI Voice (' + selectedVoice + ').mp3',
+              filename:  d.filename,
+              serveUrl:  d.mediaUrl,
+              duration:  dur,
+              mediaType: 'aud',
+              uploadId:  d.uploadId
+            });
+          } catch(_){}
+        }
+        prog.finish('Voiceover added (' + dur.toFixed(1) + 's)');
+      } catch (err){
+        // Distinguish abort (our 90s timeout) from generic failure so
+        // the user knows whether to retry or check something else.
+        var msg;
+        if (err && err.name === 'AbortError'){
+          msg = 'Voice generation took too long and was cancelled. Please try again.';
+        } else {
+          msg = (err && err.message) || String(err);
+        }
+        prog.fail(msg);
+      }
+      finally {
+        clearTimeout(clientTimer);
+        window.removeEventListener('beforeunload', beforeUnload);
+      }
     });
   }
 

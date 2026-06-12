@@ -13208,7 +13208,7 @@ router.post('/reverse-clip', requireAuth, async (req, res) => {
 router.post('/ai-voice', requireAuth, async (req, res) => {
   try {
     if (!process.env.OPENAI_API_KEY){
-      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
+      return res.status(500).json({ error: 'OPENAI_API_KEY is not configured on the server. Contact support.' });
     }
     var text  = String((req.body || {}).text  || '').trim().slice(0, 4000);
     var voice = String((req.body || {}).voice || 'alloy').toLowerCase();
@@ -13222,46 +13222,121 @@ router.post('/ai-voice', requireAuth, async (req, res) => {
     var VOICES = ['alloy','echo','fable','onyx','nova','shimmer'];
     if (VOICES.indexOf(voice) < 0) voice = 'alloy';
 
+    // Task #172 — Fix "stuck on Synthesizing voice…".
+    // Root cause: OpenAI Node SDK v4 defaults to a 10-MINUTE per-request
+    // timeout. When the TTS endpoint is slow / hangs / hits a transient
+    // network issue, the user was watching the spinner for up to 600s
+    // with no error. Bound the call to 60s, with one automatic retry,
+    // so failures surface as a clean error message within reasonable
+    // wall-clock time.
     var OpenAI = require('openai');
-    var openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    var mp3Resp = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: voice,
-      input: text,
-      speed: speed,
-      response_format: 'mp3'
+    var openai = new OpenAI({
+      apiKey:     process.env.OPENAI_API_KEY,
+      timeout:    60 * 1000,   // 60s — short TTS payloads finish in 1-5s
+      maxRetries: 1            // retry once on transient SDK errors
     });
+    var mp3Resp;
+    try {
+      mp3Resp = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: voice,
+        input: text,
+        speed: speed,
+        response_format: 'mp3'
+      });
+    } catch (apiErr) {
+      // Surface the most useful field the SDK gives us. APIError carries
+      // .status and .message; APIConnectionTimeoutError just has a
+      // generic name. Either way, give the client something actionable.
+      var status   = (apiErr && apiErr.status) || 500;
+      var hintCode = (apiErr && (apiErr.code || apiErr.name)) || '';
+      var msg      = (apiErr && apiErr.message) || 'TTS request failed';
+      if (/timeout/i.test(msg) || hintCode === 'APIConnectionTimeoutError'){
+        msg = 'TTS request timed out. Please try again.';
+        status = 504;
+      } else if (status === 401){
+        msg = 'OpenAI authentication failed. The API key may be invalid or revoked.';
+      } else if (status === 429){
+        msg = 'OpenAI rate limit hit. Wait a moment and try again.';
+      }
+      console.error('[ai-voice] OpenAI error:', { status: status, code: hintCode, msg: msg });
+      return res.status(status >= 400 && status < 600 ? status : 500).json({ error: msg });
+    }
+
     var buf = Buffer.from(await mp3Resp.arrayBuffer());
+    if (!buf || buf.length < 100){
+      return res.status(502).json({ error: 'OpenAI returned an empty audio response. Please retry.' });
+    }
     var outName = 'voice_' + voice + '_' + Date.now() + '_' + req.user.id + '.mp3';
     var outPath = path.join(uploadDir, outName);
     fs.writeFileSync(outPath, buf);
 
-    // Duration probe
+    // Task #172 — Duration probe with a hard timeout. Without this,
+    // a misconfigured ffprobe binary could leave the promise pending
+    // forever, which would block the response (same hang the SDK
+    // timeout above fixes — closing the second potential hang path).
     var duration = 0;
     try {
-      var ffprobeLocal = ffmpegPath.replace(/ffmpeg$/, 'ffprobe');
-      var out = await new Promise(function(resolve){
+      var ffprobeLocal = (ffmpegPath || '').replace(/ffmpeg$/, 'ffprobe');
+      var probeOut = await new Promise(function(resolve){
         var s = '';
-        var p = spawn(ffprobeLocal, [
-          '-v', 'error',
-          '-show_entries', 'format=duration',
-          '-of', 'default=noprint_wrappers=1:nokey=1',
-          outPath
-        ]);
+        var done = false;
+        var finish = function(v){ if (done) return; done = true; resolve(v); };
+        var hardTimer = setTimeout(function(){
+          try { p && p.kill && p.kill('SIGKILL'); } catch(_){}
+          finish('');
+        }, 5000);
+        var p;
+        try {
+          p = spawn(ffprobeLocal, [
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            outPath
+          ]);
+        } catch (e){
+          clearTimeout(hardTimer);
+          return finish('');
+        }
         p.stdout.on('data', function(d){ s += d.toString(); });
-        p.on('close', function(){ resolve(s); });
-        p.on('error', function(){ resolve(''); });
+        p.on('close', function(){ clearTimeout(hardTimer); finish(s); });
+        p.on('error', function(){ clearTimeout(hardTimer); finish(''); });
       });
-      duration = parseFloat((out || '').trim()) || 0;
+      duration = parseFloat((probeOut || '').trim()) || 0;
     } catch(_){}
+
+    // Task #172 — Mirror the local-upload bookkeeping so generated
+    // voiceovers behave like other media: persisted in user_uploads
+    // (3-day retention), bytes charged to the Dashboard storage card,
+    // and an upload id echoed for the × delete button.
+    var uploadRowId = null;
+    try {
+      var sizeBytes = fs.statSync(outPath).size;
+      var { userUploadOps, storageOps } = require('../db/database');
+      var row = await userUploadOps.insert(req.user.id, {
+        filename:        outName,
+        originalName:    'AI Voice (' + voice + ').mp3',
+        serverPath:      outPath,
+        serveUrl:        '/video-editor/download/' + outName,
+        sizeBytes:       sizeBytes,
+        mimeType:        'audio/mpeg',
+        durationSeconds: Number(duration) || 0,
+        mediaType:       'aud'
+      });
+      uploadRowId = row && row.id;
+      try { await storageOps.addBytes(req.user.id, sizeBytes); } catch(_){}
+    } catch (bookErr){
+      console.warn('[ai-voice] user_uploads insert failed:', bookErr && bookErr.message);
+    }
 
     try { featureUsageOps.log(req.user.id, 'ai_voice_inline').catch(function(){}); } catch(_){}
     res.json({
-      success: true,
+      success:  true,
       mediaUrl: '/video-editor/download/' + outName,
       filename: outName,
-      duration: duration,
-      voice: voice
+      duration: Number(duration) || 0,
+      voice:    voice,
+      uploadId: uploadRowId
     });
   } catch (err){
     console.error('[ai-voice]', err);
