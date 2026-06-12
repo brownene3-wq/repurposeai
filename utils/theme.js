@@ -490,180 +490,8 @@ function getThemeScript() {
     } catch(_){}
   
     // Load v9 buttons fix
-    var _s=document.createElement('script');_s.src='/public/js/v9-buttons-fix.js';document.head.appendChild(_s);`;
-}
+    var _s=document.createElement('script');_s.src='/public/js/v9-buttons-fix.js';document.head.appendChild(_s);
 
-function getBrandKitModal() {
-  // Centralized Brand Kit picker — mirrors the modal from
-  // public/js/v10-editor-redesign.js so /shorts, /video-editor, and any
-  // other page share one window. It lists saved Brand Templates from
-  // /brand-templates/list and lets the user Apply one. Pages may override
-  // window.applyBrandTemplateChoice to receive the picked template; the
-  // default just toasts and stores window.__appliedBrandTemplate.
-  return `
-    <style>
-      #v10BrandKitModal{position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);font-family:system-ui,sans-serif}
-      #v10BrandKitModal.show{display:flex}
-      #v10BrandKitModal .bk-panel{background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(560px,92vw);max-height:82vh;overflow-y:auto;color:#e2e0f0}
-      #v10BrandKitModal .bk-title-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-      #v10BrandKitModal .bk-title{font-weight:700;font-size:14px;color:#fde047}
-      #v10BrandKitModal .bk-sub{font-size:11px;color:#8886a0;margin-bottom:14px;line-height:1.5}
-      #v10BrandKitModal .bk-list{min-height:100px}
-      #v10BrandKitModal .bk-card{background:rgba(255,255,255,.03);border:1px solid rgba(124,58,237,.25);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
-      #v10BrandKitModal .bk-swatch{flex:none;width:72px;height:72px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
-      #v10BrandKitModal .bk-card-meta{flex:1;min-width:0}
-      #v10BrandKitModal .bk-card-name{font-size:13px;font-weight:700;color:#e2e0f0;margin-bottom:4px}
-      #v10BrandKitModal .bk-card-aspect{font-size:11px;color:#8886a0}
-      #v10BrandKitModal .bk-logo-yes{font-size:10px;color:#22c55e;margin-top:4px}
-      #v10BrandKitModal .bk-logo-no{font-size:10px;color:#5c5a70;margin-top:4px}
-      #v10BrandKitModal .bk-logo-thumb{flex:none;width:44px;height:44px;object-fit:contain;background:rgba(255,255,255,.06);border-radius:6px;padding:4px}
-      #v10BrandKitModal .bk-apply{flex:none;padding:8px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer}
-      /* Select-mode highlight (used by /shorts; harmless on other pages). */
-      #v10BrandKitModal .bk-card.bk-card-selected{border-color:#a855f7;box-shadow:0 0 0 1px #a855f7 inset,0 8px 22px rgba(168,85,247,.18)}
-      #v10BrandKitModal .bk-card-selected .bk-apply{background:linear-gradient(135deg,#10b981,#059669)}
-      #v10BrandKitModal .bk-selected-badge{font-size:10px;color:#10b981;margin-top:4px;font-weight:700;letter-spacing:.4px}
-      #v10BrandKitModal .bk-apply:hover{filter:brightness(1.1)}
-      #v10BrandKitModal .bk-footer{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px}
-      #v10BrandKitModal .bk-edit-link{color:#a78bfa;font-size:11px;text-decoration:none}
-      #v10BrandKitModal .bk-edit-link:hover{text-decoration:underline}
-      #v10BrandKitModal .bk-close-btn{padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer}
-      #v10BrandKitModal .bk-close-btn:hover{background:rgba(255,255,255,.1)}
-      #v10BrandKitModal .bk-loading{color:#a78bfa;font-size:12px;text-align:center;padding:24px 0}
-      #v10BrandKitModal .bk-spinner{display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:bkSpin 1s linear infinite;margin-right:8px;vertical-align:middle}
-      @keyframes bkSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-    </style>
-    <div id="v10BrandKitModal" onclick="if(event.target===this)closeBrandKitModal()" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
-      <div class="bk-panel">
-        <div class="bk-title-row">
-          <span style="font-size:18px">🎨</span>
-          <span class="bk-title" id="bkTitle">BRAND KIT</span>
-        </div>
-        <div class="bk-sub">Pick a saved Brand Template to apply its aspect ratio, caption style, and logo to this project.</div>
-        <div class="bk-list" id="bkList"></div>
-        <div class="bk-footer">
-          <a href="/settings?section=brandtemplates" target="_blank" rel="noopener" class="bk-edit-link">➤ Create / edit templates</a>
-          <button class="bk-close-btn" onclick="closeBrandKitModal()">Close</button>
-        </div>
-      </div>
-    </div>
-    <script>
-      (function(){
-        function bkEsc(s){
-          return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
-            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-          });
-        }
-        function renderTemplates(templates, captionStyles, aspectRatios, listEl){
-          if (!templates.length){
-            listEl.innerHTML =
-              '<div style="padding:24px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.15);border-radius:8px;text-align:center;font-size:12px;color:#8886a0;line-height:1.5">' +
-                'No saved templates yet.<br>' +
-                '<a href="/settings?section=brandtemplates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Open Brand Templates in Settings</a> to create one.' +
-              '</div>';
-            return;
-          }
-          listEl.innerHTML = '';
-          // Select-mode opt-in: pages can set window.brandKitModalMode='select'
-          // to switch the modal from "apply once" semantics to "pick the one
-          // template that future actions on this page should use." /shorts
-          // uses this; /video-editor leaves the default ('apply').
-          var __isSelectMode = (window.brandKitModalMode === 'select');
-          var __selectedId = (window.brandKitSelectedTemplateId
-            || (function(){ try { return localStorage.getItem('brandKitSelectedTemplateId'); } catch(_){ return null; } })()
-            || null);
-          var __btnLabel = __isSelectMode ? 'Select' : 'Apply &rarr;';
-          templates.forEach(function(t){
-            var capStyle = (captionStyles && captionStyles[t.captionStyle]) || {};
-            var aspect   = (aspectRatios   && aspectRatios[t.aspectRatio])  || {};
-            var capColor = capStyle.color || '#a78bfa';
-            // Headline = the user-entered template name (e.g. "Renamed Brand TikTok").
-            // The caption style's display name is moved to a secondary line
-            // so users can still see which preset the template uses, but the
-            // card identity is the template they named.
-            var capStyleName = capStyle.name || t.captionStyle || 'Default';
-            var titleName    = (t.name && String(t.name).trim()) || capStyleName;
-            var aspName  = (aspect.label ? (aspect.icon + ' ' + aspect.label) : (t.aspectRatio || ''));
-            var card = document.createElement('div');
-            var isThisSelected = __isSelectMode && (t.id || '') === __selectedId;
-            card.className = 'bk-card' + (isThisSelected ? ' bk-card-selected' : '');
-            card.innerHTML =
-              '<div class="bk-swatch" style="background:linear-gradient(135deg,' + capColor + ',' + capColor + '80)">Aa</div>' +
-              '<div class="bk-card-meta">' +
-                '<div class="bk-card-name">' + bkEsc(titleName) + '</div>' +
-                '<div class="bk-card-aspect">' + bkEsc(aspName) + (capStyleName && capStyleName !== titleName ? ' &middot; ' + bkEsc(capStyleName) : '') + '</div>' +
-                (t.logoUrl
-                  ? ('<div class="bk-logo-yes">&#x2713; Logo attached</div>')
-                  : ('<div class="bk-logo-no">No logo</div>')
-                ) +
-                (isThisSelected ? '<div class="bk-selected-badge">&#x2713; SELECTED</div>' : '') +
-              '</div>' +
-              (t.logoUrl
-                ? ('<img src="' + t.logoUrl + '" class="bk-logo-thumb" onerror="this.remove()"/>')
-                : ''
-              ) +
-              '<button class="bk-apply" data-template-id="' + (t.id || '') + '">' +
-                (isThisSelected ? '&#x2713; Selected' : __btnLabel) +
-              '</button>';
-            listEl.appendChild(card);
-          });
-          Array.prototype.forEach.call(listEl.querySelectorAll('.bk-apply'), function(btn){
-            btn.addEventListener('click', function(){
-              var tid = btn.getAttribute('data-template-id');
-              var tmpl = templates.find(function(t){ return (t.id || '') === tid; }) || templates[0];
-              var modeAtClick = window.brandKitModalMode;
-              // Pages can hook custom apply logic via window.applyBrandTemplateChoice
-              try {
-                if (typeof window.applyBrandTemplateChoice === 'function'){
-                  window.applyBrandTemplateChoice(tmpl, captionStyles, aspectRatios);
-                } else {
-                  window.__appliedBrandTemplate = tmpl;
-                  if (typeof showToast === 'function') showToast('Applied "' + (tmpl && (tmpl.name || (capStyle && capStyle.name) || 'template')) + '"');
-                }
-              } catch (e){ console.warn('Apply hook failed:', e); }
-              if (modeAtClick === 'select') {
-                // Stay open and re-paint the list so the picked card now
-                // shows its "Selected" state. Use the in-memory templates,
-                // no extra network fetch needed.
-                try { renderTemplates(templates, captionStyles, aspectRatios, listEl); } catch (e) {}
-              } else {
-                closeBrandKitModal();
-              }
-            });
-          });
-        }
-        window.openBrandKitModal = async function(){
-          var modal = document.getElementById('v10BrandKitModal');
-          if (!modal) return;
-          modal.classList.add('show');
-          var list = modal.querySelector('#bkList');
-          list.innerHTML = '<div class="bk-loading"><span class="bk-spinner"></span>Loading templates…</div>';
-          try {
-            var r = await fetch('/brand-templates/list', { credentials: 'same-origin' });
-            var d = await r.json();
-            if (!r.ok) throw new Error(d.error || 'Failed to load');
-            renderTemplates(d.templates || [], d.captionStyles || {}, d.aspectRatios || {}, list);
-          } catch (err){
-            list.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
-              (err.message || 'Failed to load templates') + '</div>';
-          }
-        };
-        window.closeBrandKitModal = function(){
-          var modal = document.getElementById('v10BrandKitModal');
-          if (modal) modal.classList.remove('show');
-        };
-        document.addEventListener('keydown', function(e){
-          if (e.key === 'Escape') {
-            var m = document.getElementById('v10BrandKitModal');
-            if (m && m.classList.contains('show')) closeBrandKitModal();
-          }
-        });
-        try {
-          var params = new URLSearchParams(location.search);
-          if (params.get('openBrandKit') === '1') {
-            window.addEventListener('DOMContentLoaded', function(){ openBrandKitModal(); });
-          }
-        } catch (e) {}
-      })();
 
       /* =====================================================
        * Themed alert / confirm / prompt
@@ -842,6 +670,180 @@ function getBrandKitModal() {
             open({ message: msg }, 'alert');
             return undefined;
           };
+        } catch (e) {}
+      })();
+`;
+}
+
+function getBrandKitModal() {
+  // Centralized Brand Kit picker — mirrors the modal from
+  // public/js/v10-editor-redesign.js so /shorts, /video-editor, and any
+  // other page share one window. It lists saved Brand Templates from
+  // /brand-templates/list and lets the user Apply one. Pages may override
+  // window.applyBrandTemplateChoice to receive the picked template; the
+  // default just toasts and stores window.__appliedBrandTemplate.
+  return `
+    <style>
+      #v10BrandKitModal{position:fixed;inset:0;z-index:99998;background:rgba(8,6,18,.75);display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);font-family:system-ui,sans-serif}
+      #v10BrandKitModal.show{display:flex}
+      #v10BrandKitModal .bk-panel{background:#1a1230;border:1px solid rgba(124,58,237,.4);border-radius:12px;padding:18px;width:min(560px,92vw);max-height:82vh;overflow-y:auto;color:#e2e0f0}
+      #v10BrandKitModal .bk-title-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+      #v10BrandKitModal .bk-title{font-weight:700;font-size:14px;color:#fde047}
+      #v10BrandKitModal .bk-sub{font-size:11px;color:#8886a0;margin-bottom:14px;line-height:1.5}
+      #v10BrandKitModal .bk-list{min-height:100px}
+      #v10BrandKitModal .bk-card{background:rgba(255,255,255,.03);border:1px solid rgba(124,58,237,.25);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px}
+      #v10BrandKitModal .bk-swatch{flex:none;width:72px;height:72px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+      #v10BrandKitModal .bk-card-meta{flex:1;min-width:0}
+      #v10BrandKitModal .bk-card-name{font-size:13px;font-weight:700;color:#e2e0f0;margin-bottom:4px}
+      #v10BrandKitModal .bk-card-aspect{font-size:11px;color:#8886a0}
+      #v10BrandKitModal .bk-logo-yes{font-size:10px;color:#22c55e;margin-top:4px}
+      #v10BrandKitModal .bk-logo-no{font-size:10px;color:#5c5a70;margin-top:4px}
+      #v10BrandKitModal .bk-logo-thumb{flex:none;width:44px;height:44px;object-fit:contain;background:rgba(255,255,255,.06);border-radius:6px;padding:4px}
+      #v10BrandKitModal .bk-apply{flex:none;padding:8px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+      /* Select-mode highlight (used by /shorts; harmless on other pages). */
+      #v10BrandKitModal .bk-card.bk-card-selected{border-color:#a855f7;box-shadow:0 0 0 1px #a855f7 inset,0 8px 22px rgba(168,85,247,.18)}
+      #v10BrandKitModal .bk-card-selected .bk-apply{background:linear-gradient(135deg,#10b981,#059669)}
+      #v10BrandKitModal .bk-selected-badge{font-size:10px;color:#10b981;margin-top:4px;font-weight:700;letter-spacing:.4px}
+      #v10BrandKitModal .bk-apply:hover{filter:brightness(1.1)}
+      #v10BrandKitModal .bk-footer{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:14px}
+      #v10BrandKitModal .bk-edit-link{color:#a78bfa;font-size:11px;text-decoration:none}
+      #v10BrandKitModal .bk-edit-link:hover{text-decoration:underline}
+      #v10BrandKitModal .bk-close-btn{padding:8px 14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;color:#e2e0f0;font-size:12px;cursor:pointer}
+      #v10BrandKitModal .bk-close-btn:hover{background:rgba(255,255,255,.1)}
+      #v10BrandKitModal .bk-loading{color:#a78bfa;font-size:12px;text-align:center;padding:24px 0}
+      #v10BrandKitModal .bk-spinner{display:inline-block;width:14px;height:14px;border:2px solid #a78bfa;border-top-color:transparent;border-radius:50%;animation:bkSpin 1s linear infinite;margin-right:8px;vertical-align:middle}
+      @keyframes bkSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+    </style>
+    <div id="v10BrandKitModal" onclick="if(event.target===this)closeBrandKitModal()" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
+      <div class="bk-panel">
+        <div class="bk-title-row">
+          <span style="font-size:18px">🎨</span>
+          <span class="bk-title" id="bkTitle">BRAND KIT</span>
+        </div>
+        <div class="bk-sub">Pick a saved Brand Template to apply its aspect ratio, caption style, and logo to this project.</div>
+        <div class="bk-list" id="bkList"></div>
+        <div class="bk-footer">
+          <a href="/settings?section=brandtemplates" target="_blank" rel="noopener" class="bk-edit-link">➤ Create / edit templates</a>
+          <button class="bk-close-btn" onclick="closeBrandKitModal()">Close</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function(){
+        function bkEsc(s){
+          return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+          });
+        }
+        function renderTemplates(templates, captionStyles, aspectRatios, listEl){
+          if (!templates.length){
+            listEl.innerHTML =
+              '<div style="padding:24px;background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.15);border-radius:8px;text-align:center;font-size:12px;color:#8886a0;line-height:1.5">' +
+                'No saved templates yet.<br>' +
+                '<a href="/settings?section=brandtemplates" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none">Open Brand Templates in Settings</a> to create one.' +
+              '</div>';
+            return;
+          }
+          listEl.innerHTML = '';
+          // Select-mode opt-in: pages can set window.brandKitModalMode='select'
+          // to switch the modal from "apply once" semantics to "pick the one
+          // template that future actions on this page should use." /shorts
+          // uses this; /video-editor leaves the default ('apply').
+          var __isSelectMode = (window.brandKitModalMode === 'select');
+          var __selectedId = (window.brandKitSelectedTemplateId
+            || (function(){ try { return localStorage.getItem('brandKitSelectedTemplateId'); } catch(_){ return null; } })()
+            || null);
+          var __btnLabel = __isSelectMode ? 'Select' : 'Apply &rarr;';
+          templates.forEach(function(t){
+            var capStyle = (captionStyles && captionStyles[t.captionStyle]) || {};
+            var aspect   = (aspectRatios   && aspectRatios[t.aspectRatio])  || {};
+            var capColor = capStyle.color || '#a78bfa';
+            // Headline = the user-entered template name (e.g. "Renamed Brand TikTok").
+            // The caption style's display name is moved to a secondary line
+            // so users can still see which preset the template uses, but the
+            // card identity is the template they named.
+            var capStyleName = capStyle.name || t.captionStyle || 'Default';
+            var titleName    = (t.name && String(t.name).trim()) || capStyleName;
+            var aspName  = (aspect.label ? (aspect.icon + ' ' + aspect.label) : (t.aspectRatio || ''));
+            var card = document.createElement('div');
+            var isThisSelected = __isSelectMode && (t.id || '') === __selectedId;
+            card.className = 'bk-card' + (isThisSelected ? ' bk-card-selected' : '');
+            card.innerHTML =
+              '<div class="bk-swatch" style="background:linear-gradient(135deg,' + capColor + ',' + capColor + '80)">Aa</div>' +
+              '<div class="bk-card-meta">' +
+                '<div class="bk-card-name">' + bkEsc(titleName) + '</div>' +
+                '<div class="bk-card-aspect">' + bkEsc(aspName) + (capStyleName && capStyleName !== titleName ? ' &middot; ' + bkEsc(capStyleName) : '') + '</div>' +
+                (t.logoUrl
+                  ? ('<div class="bk-logo-yes">&#x2713; Logo attached</div>')
+                  : ('<div class="bk-logo-no">No logo</div>')
+                ) +
+                (isThisSelected ? '<div class="bk-selected-badge">&#x2713; SELECTED</div>' : '') +
+              '</div>' +
+              (t.logoUrl
+                ? ('<img src="' + t.logoUrl + '" class="bk-logo-thumb" onerror="this.remove()"/>')
+                : ''
+              ) +
+              '<button class="bk-apply" data-template-id="' + (t.id || '') + '">' +
+                (isThisSelected ? '&#x2713; Selected' : __btnLabel) +
+              '</button>';
+            listEl.appendChild(card);
+          });
+          Array.prototype.forEach.call(listEl.querySelectorAll('.bk-apply'), function(btn){
+            btn.addEventListener('click', function(){
+              var tid = btn.getAttribute('data-template-id');
+              var tmpl = templates.find(function(t){ return (t.id || '') === tid; }) || templates[0];
+              var modeAtClick = window.brandKitModalMode;
+              // Pages can hook custom apply logic via window.applyBrandTemplateChoice
+              try {
+                if (typeof window.applyBrandTemplateChoice === 'function'){
+                  window.applyBrandTemplateChoice(tmpl, captionStyles, aspectRatios);
+                } else {
+                  window.__appliedBrandTemplate = tmpl;
+                  if (typeof showToast === 'function') showToast('Applied "' + (tmpl && (tmpl.name || (capStyle && capStyle.name) || 'template')) + '"');
+                }
+              } catch (e){ console.warn('Apply hook failed:', e); }
+              if (modeAtClick === 'select') {
+                // Stay open and re-paint the list so the picked card now
+                // shows its "Selected" state. Use the in-memory templates,
+                // no extra network fetch needed.
+                try { renderTemplates(templates, captionStyles, aspectRatios, listEl); } catch (e) {}
+              } else {
+                closeBrandKitModal();
+              }
+            });
+          });
+        }
+        window.openBrandKitModal = async function(){
+          var modal = document.getElementById('v10BrandKitModal');
+          if (!modal) return;
+          modal.classList.add('show');
+          var list = modal.querySelector('#bkList');
+          list.innerHTML = '<div class="bk-loading"><span class="bk-spinner"></span>Loading templates…</div>';
+          try {
+            var r = await fetch('/brand-templates/list', { credentials: 'same-origin' });
+            var d = await r.json();
+            if (!r.ok) throw new Error(d.error || 'Failed to load');
+            renderTemplates(d.templates || [], d.captionStyles || {}, d.aspectRatios || {}, list);
+          } catch (err){
+            list.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:20px;text-align:center">' +
+              (err.message || 'Failed to load templates') + '</div>';
+          }
+        };
+        window.closeBrandKitModal = function(){
+          var modal = document.getElementById('v10BrandKitModal');
+          if (modal) modal.classList.remove('show');
+        };
+        document.addEventListener('keydown', function(e){
+          if (e.key === 'Escape') {
+            var m = document.getElementById('v10BrandKitModal');
+            if (m && m.classList.contains('show')) closeBrandKitModal();
+          }
+        });
+        try {
+          var params = new URLSearchParams(location.search);
+          if (params.get('openBrandKit') === '1') {
+            window.addEventListener('DOMContentLoaded', function(){ openBrandKitModal(); });
+          }
         } catch (e) {}
       })();
 
