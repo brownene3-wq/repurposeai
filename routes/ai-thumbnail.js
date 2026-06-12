@@ -1212,6 +1212,56 @@ async function generateSyntheticWithFace({ concept, preset, aspect, jobId, index
   return bgPath;
 }
 
+// Stage C (reference-guided) — Use Flux Kontext Pro to transform a real
+// moment from the source video into a scroll-stopping thumbnail. The model
+// preserves the original frame's subject and composition but exaggerates
+// emotion, lighting, and color so the result feels like an elevated version
+// of an actual moment from the video. This is the "anchored to source"
+// counterpart to the pure-synthetic Flux 1.1 Pro path.
+async function generateSyntheticKontext({ concept, preset, aspect, jobId, index, referenceFramePath }) {
+  if (!process.env.REPLICATE_API_TOKEN) throw new Error('REPLICATE_API_TOKEN not configured');
+  if (!replicate) throw new Error('Replicate SDK not installed on this server.');
+  if (!referenceFramePath || !fs.existsSync(referenceFramePath)) throw new Error('Reference frame not found');
+
+  const aspectRatio = aspect === '9:16' ? '9:16' : aspect === '1:1' ? '1:1' : '16:9';
+  const frameBuf = fs.readFileSync(referenceFramePath);
+  const refUri = 'data:image/png;base64,' + frameBuf.toString('base64');
+
+  // Kontext-specific framing: "transform this moment" rather than "create
+  // something new". Keep subject and composition but dial up the drama.
+  const kontextPrompt = 'Transform this moment from a video into a scroll-stopping YouTube thumbnail. '
+    + 'Keep the same subject identity, scene, and core composition, but exaggerate the emotion and facial expression, '
+    + 'punch up the lighting, deepen the colors, sharpen the contrast, and add cinematic visual impact. '
+    + 'Make it feel like an elevated, hyper-real version of this exact moment.\n\n'
+    + (concept.fullPrompt || '')
+    + '\n\nVisual mood: ' + (preset.backgroundSuffix || '')
+    + '. Do NOT add any text, words, letters, captions, watermarks, or logos to the image.';
+
+  const prediction = await replicate.predictions.create({
+    model: 'black-forest-labs/flux-kontext-pro',
+    input: {
+      input_image: refUri,
+      prompt: kontextPrompt,
+      aspect_ratio: aspectRatio,
+      output_format: 'png',
+      safety_tolerance: 5
+    }
+  });
+  const final = await replicate.wait(prediction, { interval: 1500 });
+  if (final.status !== 'succeeded') {
+    throw new Error('flux-kontext-pro ' + final.status + ': ' + (final.error || 'unknown'));
+  }
+  const out = final.output;
+  const url = Array.isArray(out) ? out[0] : out;
+  if (!url || typeof url !== 'string') throw new Error('Flux Kontext returned no image URL');
+
+  const imgResp = await fetch(url);
+  if (!imgResp.ok) throw new Error('Failed to download Kontext image: HTTP ' + imgResp.status);
+  const bgPath = path.join(outputDir, 'syn-kontext-' + jobId + '-' + index + '.png');
+  fs.writeFileSync(bgPath, Buffer.from(await imgResp.arrayBuffer()));
+  return bgPath;
+}
+
 // ============================================================================
 // Frame-based thumbnail pipeline (DEPRECATED — kept for reference only)
 // ----------------------------------------------------------------------------
@@ -5153,6 +5203,7 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
   let downloadedYoutubeFile = null;
   let audioPath = null;
   let faceCutoutPath = null;
+  let referenceFramePath = null;
 
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -5287,22 +5338,78 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     }
     const hookTopic = conceptResult.hookTopic || (analysis && analysis.hookTopic) || (videoTitle || '').slice(0, 80);
 
+    // Extract + score a single reference frame from the source video. This
+    // unlocks the hybrid "anchored" path (Flux Kontext) where half the
+    // concepts are visually faithful to a real moment in the video. Best
+    // effort: any failure leaves referenceFramePath = null and we run the
+    // pure-synthetic path for every concept.
+    let topFrameOverall = 0;
+    try {
+      if (videoPath && fs.existsSync(videoPath)) {
+        const frames = await extractCandidateFrames(videoPath, 4);
+        if (frames && frames.length > 0) {
+          const scored = await scoreCandidateFrames(frames);
+          const top = (scored || []).slice().sort((a, b) => (b.overall || 0) - (a.overall || 0))[0];
+          if (top && top.path && fs.existsSync(top.path)) {
+            referenceFramePath = top.path;
+            topFrameOverall = top.overall || 0;
+          }
+          // Clean up non-top frames + previews
+          frames.forEach((f) => {
+            if (f.path && f.path !== referenceFramePath) { try { fs.unlinkSync(f.path); } catch (e) {} }
+            if (f.previewPath && f.previewPath !== f.path && f.previewPath !== referenceFramePath) {
+              try { fs.unlinkSync(f.previewPath); } catch (e) {}
+            }
+          });
+        }
+      }
+    } catch (frameErr) {
+      console.warn('[AI Thumbnail AI-Gen] Reference frame extraction/scoring failed, falling back to all-synthetic:', frameErr.message);
+      referenceFramePath = null;
+    }
+    // Only use Kontext when we have a frame with a decent overall score.
+    // Low-overall frames (e.g., audio-only podcasts, screen recordings with
+    // no visual subject) tend to produce flat Kontext outputs.
+    const kontextEligible = !!referenceFramePath && topFrameOverall >= 3;
+    console.log('[AI Thumbnail AI-Gen] Reference frame:', { hasFrame: !!referenceFramePath, overall: topFrameOverall, kontextEligible });
+
     // Render each concept in parallel. Promise.allSettled so a single
-    // Flux/InstantID failure doesn't tank the whole request.
+    // model failure doesn't tank the whole request.
     const jobId = uuidv4().slice(0, 10);
     const results = await Promise.allSettled(conceptResult.concepts.map(async (concept, index) => {
       let bgPath;
+      let mode = 'synthetic';
       let usedFace = false;
-      if (hasFace && faceFile && fs.existsSync(faceFile.path)) {
+
+      // Even-indexed concepts (0, 2, ...) try the Kontext "anchored" path
+      // when eligible. Odd-indexed concepts stay pure-synthetic (Flux 1.1
+      // Pro or InstantID). When a face is uploaded, even concepts still try
+      // Kontext first (the source frame likely has the same face), and we
+      // fall back to InstantID if Kontext fails.
+      const useKontext = kontextEligible && (index % 2 === 0);
+
+      if (useKontext) {
         try {
-          bgPath = await generateSyntheticWithFace({ concept, preset, aspect, jobId, index, facePath: faceFile.path });
-          usedFace = true;
-        } catch (faceErr) {
-          console.warn('[AI Thumbnail AI-Gen] InstantID failed for concept ' + index + ', falling back to faceless synthesis:', faceErr.message);
+          bgPath = await generateSyntheticKontext({ concept, preset, aspect, jobId, index, referenceFramePath });
+          mode = 'kontext';
+        } catch (kErr) {
+          console.warn('[AI Thumbnail AI-Gen] Kontext failed for concept ' + index + ', falling back to pure synthesis:', kErr.message);
+          // fall through to synthetic path below
+        }
+      }
+
+      if (!bgPath) {
+        if (hasFace && faceFile && fs.existsSync(faceFile.path)) {
+          try {
+            bgPath = await generateSyntheticWithFace({ concept, preset, aspect, jobId, index, facePath: faceFile.path });
+            usedFace = true;
+          } catch (faceErr) {
+            console.warn('[AI Thumbnail AI-Gen] InstantID failed for concept ' + index + ', falling back to faceless synthesis:', faceErr.message);
+            bgPath = await generateSyntheticBg({ concept, preset, aspect, jobId, index });
+          }
+        } else {
           bgPath = await generateSyntheticBg({ concept, preset, aspect, jobId, index });
         }
-      } else {
-        bgPath = await generateSyntheticBg({ concept, preset, aspect, jobId, index });
       }
 
       const filename = 'syn-thumb-' + jobId + '-' + index + '.png';
@@ -5326,7 +5433,8 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
         emotion: concept.emotion,
         palette: concept.palette,
         prompt: concept.fullPrompt,
-        usedFace
+        usedFace,
+        mode
       };
     }));
 
@@ -5336,14 +5444,15 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
       if (r.status === 'fulfilled') {
         thumbnails.push({
           filename: r.value.filename,
-          outputType: 'AI Synthesis',
+          outputType: r.value.mode === 'kontext' ? 'AI Synthesis (Anchored to source)' : 'AI Synthesis',
+          mode: r.value.mode || 'synthetic',
           title: r.value.title,
           angle: r.value.angle,
           heroSubject: r.value.heroSubject,
           emotion: r.value.emotion,
           palette: r.value.palette,
           faceSwapped: r.value.usedFace,
-          creatorSegmented: false,
+          creatorSegmented: r.value.mode === 'kontext',
           preset: preset.key,
           prompt: r.value.prompt
         });
@@ -5378,6 +5487,7 @@ router.post('/ai-generate', requireAuth, upload.fields([{ name: 'videoFile', max
     // Cleanup temp files (face cutout cache is NOT cleaned up — it's intentionally retained)
     if (audioPath) { try { fs.unlinkSync(audioPath); } catch (e) {} }
     if (downloadedYoutubeFile) { try { fs.unlinkSync(downloadedYoutubeFile); } catch (e) {} }
+    if (referenceFramePath) { try { fs.unlinkSync(referenceFramePath); } catch (e) {} }
     if (req.files) {
       ['videoFile', 'faceFile'].forEach((field) => {
         const arr = req.files[field];
