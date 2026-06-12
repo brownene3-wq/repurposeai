@@ -373,11 +373,11 @@ router.get('/', requireAuth, async (req, res) => {
         </div>
         <div class="or-divider"><span>or import from</span></div>
         <div class="import-btns">
-          <button class="import-btn" onclick="alert('Google Drive import coming soon!')">
+          <button class="import-btn" onclick="importFromCloud('googledrive')">
             <img src="/images/section-icons/A-74.png" alt="" style="height:20px;width:20px;vertical-align:middle">
             Google Drive
           </button>
-          <button class="import-btn" onclick="alert('Dropbox import coming soon!')">
+          <button class="import-btn" onclick="importFromCloud('dropbox')">
             <img src="/images/section-icons/A-75.png" alt="" style="height:20px;width:20px;vertical-align:middle">
             Dropbox
           </button>
@@ -567,6 +567,85 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
+    async function importFromCloud(source) {
+      // Ask the user for a shareable URL — Drive or Dropbox. The
+      // server downloads it and runs the standard upload-analysis
+      // SSE pipeline, so the user experience matches an upload.
+      const isDrive = source === 'googledrive';
+      const promptMsg = isDrive
+        ? 'Paste a publicly shareable Google Drive link.\\n\\nIn Drive, right-click the file → Share → Anyone with the link → Copy link.'
+        : 'Paste a publicly shareable Dropbox link.\\n\\nIn Dropbox, click Share on the file → Copy link.';
+      const placeholder = isDrive
+        ? 'https://drive.google.com/file/d/.../view?usp=sharing'
+        : 'https://www.dropbox.com/s/.../filename.mp4?dl=0';
+      let url;
+      if (window.themedPrompt) {
+        url = await window.themedPrompt(promptMsg, { title: isDrive ? 'Import from Google Drive' : 'Import from Dropbox', placeholder: placeholder });
+      } else {
+        url = prompt(promptMsg);
+      }
+      if (!url) return;
+      url = (url || '').trim();
+      if (!url) return;
+
+      const btn = document.getElementById('processBtn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Analyzing…'; }
+      showAnalyzeNotice(isDrive ? 'Downloading from Google Drive…' : 'Downloading from Dropbox…');
+
+      try {
+        const res = await fetch('/shorts/analyze-cloud-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          throw new Error(data.error || 'Import failed');
+        }
+        if (!res.ok) throw new Error('Import failed. Please try again.');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        const NL = String.fromCharCode(10);
+        let analysisId = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split(NL);
+          buf = parts.pop() || '';
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            let data;
+            try { data = JSON.parse(trimmed.slice(6)); } catch (_) { continue; }
+            if (data.status === 'completed') {
+              analysisId = data.analysisId;
+              setAnalyzeStep('Analysis complete! Redirecting…');
+            } else if (data.status === 'error') {
+              throw new Error(data.message || 'Import failed');
+            } else if (data.message) {
+              setAnalyzeStep(data.message);
+            }
+          }
+        }
+        if (analysisId) {
+          hideAnalyzeNotice();
+          location.href = '/shorts?openAnalysis=' + encodeURIComponent(analysisId);
+          return;
+        }
+        hideAnalyzeNotice();
+        location.href = '/shorts';
+      } catch (err) {
+        hideAnalyzeNotice();
+        (window.themedAlert ? window.themedAlert(err.message || 'Cloud import failed.', { title: 'Cloud import failed' }) : alert(err.message || 'Cloud import failed.'));
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '&#x26A1; Repurpose'; }
+      }
+    }
+
     function showAnalyzeNotice(initialMsg){
       var n = document.getElementById('analyzeNotice');
       if (!n) {
@@ -613,7 +692,10 @@ router.get('/', requireAuth, async (req, res) => {
 
     async function processVideo() {
       const url = document.getElementById('youtubeUrl').value.trim();
-      if (!url) { alert('Please paste a YouTube URL'); return; }
+      if (!url) {
+        (window.themedAlert ? window.themedAlert('Paste a YouTube URL above to get started — we will do the rest.', { title: 'Add a YouTube link' }) : alert('Please paste a YouTube URL'));
+        return;
+      }
 
       const btn = document.getElementById('processBtn');
       btn.disabled = true; btn.innerHTML = '<img src="/images/section-icons/A-89.png" alt="" style="height:16px;width:16px;vertical-align:middle;margin-right:2px"> Analyzing…';
